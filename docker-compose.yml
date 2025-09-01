@@ -1,19 +1,25 @@
-version: '3.8'
+version: "3.8"
+
 services:
-  api:
-    build: .
-    image: vladicore-api:latest
+  vladicore-api:
+    image: ghcr.io/shinozakiAichi/vladicore-api:${IMAGE_TAG}
     container_name: vladicore-api
+    restart: unless-stopped
+    expose:
+      - "8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - Jwt__Key=change_this_ultra_secret_key_32b_min
-      - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=shinozaki_db;Username=aichishinozaki;Password=aichishinozaki651
-    ports:
-      - "9000:8080"
-    networks:
-      - monitoring_net
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      Jwt__Key: "${JWT_KEY}"
+      ConnectionStrings__Postgres: "${POSTGRES_CONNSTR}"
+    networks: [ monitoring_monitoring_net ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
 networks:
-  monitoring_net:
+  monitoring_monitoring_net:
     external: true
-    name: monitoring_default
