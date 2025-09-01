@@ -7,16 +7,17 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  IMAGE: ghcr.io/shinozakiaichi/vladicore-api
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
       - run: dotnet restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release
@@ -26,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
-      contents: write
+      contents: write   # чтобы закоммитить обновлённый stack.env
     steps:
       - uses: actions/checkout@v4
 
@@ -34,12 +35,18 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Set lowercase repo owner
+        run: echo "REPO_OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
 
       - name: Build and push image
         run: |
-          docker build --pull -t $IMAGE:latest .
+          IMAGE=ghcr.io/$REPO_OWNER_LC/vladicoreapi
+          echo "Using image: $IMAGE"
+
+          docker build -t $IMAGE:latest .
           docker tag $IMAGE:latest $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
           docker push $IMAGE:${{ github.sha }}
