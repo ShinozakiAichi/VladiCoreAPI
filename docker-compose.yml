@@ -3,6 +3,9 @@ version: "3.8"
 services:
   vladicore-api:
     image: ghcr.io/shinozakiaichi/vladicore-api:${IMAGE_TAG:-latest}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     container_name: vladicore-api
     restart: unless-stopped
     expose:
