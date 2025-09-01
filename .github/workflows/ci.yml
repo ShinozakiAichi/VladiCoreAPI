@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
-      contents: write   # чтобы закоммитить обновлённый stack.env
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -35,15 +35,15 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set lowercase repo owner
         run: echo "REPO_OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
 
       - name: Build and push image
         run: |
-          IMAGE=ghcr.io/$REPO_OWNER_LC/vladicoreapi
+          IMAGE=ghcr.io/$REPO_OWNER_LC/vladicore-api
           echo "Using image: $IMAGE"
 
           docker build -t $IMAGE:latest .
