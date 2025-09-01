@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  api:
+    build: .
+    image: vladicore-api:latest
+    container_name: vladicore-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - Jwt__Key=change_this_ultra_secret_key_32b_min
+      - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=shinozaki_db;Username=aichishinozaki;Password=aichishinozaki651
+    ports:
+      - "9000:8080"
+    networks:
+      - monitoring_net
+
+networks:
+  monitoring_net:
+    external: true
+    name: monitoring_default
