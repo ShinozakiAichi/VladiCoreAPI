@@ -12,11 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set lowercase repository owner
+        run: echo "OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+
       - name: Log in to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ env.OWNER_LC }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
@@ -24,4 +27,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/vladicoreapi:latest
+          tags: ghcr.io/${{ env.OWNER_LC }}/vladicoreapi:latest
