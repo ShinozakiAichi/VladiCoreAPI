@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   vladicore-api:
-    image: ghcr.io/shinozakiAichi/vladicore-api:${IMAGE_TAG}
+    image: ghcr.io/shinozakiaichi/vladicore-api:${IMAGE_TAG}
     container_name: vladicore-api
     restart: unless-stopped
     expose:
