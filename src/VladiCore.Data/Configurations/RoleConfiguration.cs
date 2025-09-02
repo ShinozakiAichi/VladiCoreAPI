@@ -11,8 +11,6 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
         builder.ToTable("roles", "core");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).IsRequired();
-        builder.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
-        builder.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
         builder.HasIndex(x => x.Name).IsUnique();
     }
 }

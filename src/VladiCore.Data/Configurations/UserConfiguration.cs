@@ -11,14 +11,16 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.ToTable("users", "core");
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Email).HasColumnType("citext");
-        builder.Property(x => x.Username).HasColumnType("citext");
+        builder.Property(x => x.Email).IsRequired().HasColumnType("citext");
+        builder.Property(x => x.Username).IsRequired().HasColumnType("citext");
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
 
+        // Единственная связь User → Role; у Role нет коллекции Users
         builder.HasOne(x => x.Role)
                .WithMany()
                .HasForeignKey(x => x.RoleId)
+               .IsRequired()
                .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(x => x.Email).IsUnique();
