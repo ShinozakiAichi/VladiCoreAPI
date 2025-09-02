@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        // Подхватываем все *Configuration из сборки данных
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
         if (Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
