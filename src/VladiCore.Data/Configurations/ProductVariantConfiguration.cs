@@ -8,7 +8,7 @@ public class ProductVariantConfiguration : IEntityTypeConfiguration<ProductVaria
 {
     public void Configure(EntityTypeBuilder<ProductVariant> builder)
     {
-        builder.ToTable("product_variants");
+        builder.ToTable("product_variants", "catalog");
         builder.HasKey(v => v.Id);
         builder.Property(v => v.Price).HasColumnType("numeric(12,2)");
         builder.Property(v => v.Attributes).HasColumnType("jsonb");

@@ -8,16 +8,20 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
-        builder.ToTable("users");
-        builder.Property(x => x.Username).HasColumnType("citext").IsRequired();
-        builder.HasIndex(x => x.Username).IsUnique();
-        builder.Property(x => x.Email).HasColumnType("citext").IsRequired();
-        builder.HasIndex(x => x.Email).IsUnique();
-        builder.Property(x => x.PasswordHash).IsRequired();
+        builder.ToTable("users", "core");
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Email).HasColumnType("citext");
+        builder.Property(x => x.Username).HasColumnType("citext");
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+
         builder.HasOne(x => x.Role)
-               .WithMany(r => r.Users)
-               .HasForeignKey(x => x.RoleId);
+               .WithMany()
+               .HasForeignKey(x => x.RoleId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => x.Email).IsUnique();
+        builder.HasIndex(x => x.Username).IsUnique();
     }
 }

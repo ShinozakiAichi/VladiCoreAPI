@@ -9,7 +9,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 {
     public void Configure(EntityTypeBuilder<Order> builder)
     {
-        builder.ToTable("orders");
+        builder.ToTable("orders", "sales");
         builder.HasKey(o => o.Id);
         builder.Property(o => o.Status).HasConversion<string>();
         builder.Property(o => o.Currency).HasConversion<string>();

@@ -9,7 +9,7 @@ public class CartConfiguration : IEntityTypeConfiguration<Cart>
 {
     public void Configure(EntityTypeBuilder<Cart> builder)
     {
-        builder.ToTable("carts");
+        builder.ToTable("carts", "sales");
         builder.HasKey(c => c.Id);
         builder.Property(c => c.Currency).HasConversion<string>();
         builder.Property(c => c.CreatedAt).HasDefaultValueSql("now()");

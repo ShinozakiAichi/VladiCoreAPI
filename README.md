@@ -18,6 +18,12 @@ The PostgreSQL connection string must include
 `Include Error Detail=true; Search Path=public,core,catalog,sales,inventory`
 so EF Core can access all schemas.
 
+Example env variable:
+
+```
+ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=shinozaki_db;Username=aichishinozaki;Password=aichishinozaki651;Include Error Detail=true;Search Path=public,core,catalog,sales,inventory
+```
+
 
 
 ## Build

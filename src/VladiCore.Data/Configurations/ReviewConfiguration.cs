@@ -8,7 +8,7 @@ public class ReviewConfiguration : IEntityTypeConfiguration<Review>
 {
     public void Configure(EntityTypeBuilder<Review> builder)
     {
-        builder.ToTable("reviews");
+        builder.ToTable("reviews", "catalog");
         builder.HasKey(r => r.Id);
         builder.Property(r => r.CreatedAt).HasDefaultValueSql("now()");
         builder.HasIndex(r => new { r.ProductId, r.UserId }).IsUnique();
