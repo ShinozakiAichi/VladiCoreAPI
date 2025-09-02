@@ -9,7 +9,7 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
 {
     public void Configure(EntityTypeBuilder<Payment> builder)
     {
-        builder.ToTable("payments");
+        builder.ToTable("payments", "sales");
         builder.HasKey(p => p.Id);
         builder.Property(p => p.Amount).HasColumnType("numeric(12,2)");
         builder.Property(p => p.Currency).HasConversion<string>();

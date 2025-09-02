@@ -8,7 +8,7 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 {
     public void Configure(EntityTypeBuilder<RefreshToken> builder)
     {
-        builder.ToTable("refresh_tokens");
+        builder.ToTable("refresh_tokens", "core");
         builder.HasKey(x => x.Id);
         builder.HasIndex(x => x.UserId);
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("now()");

@@ -8,7 +8,7 @@ public class ProductImageConfiguration : IEntityTypeConfiguration<ProductImage>
 {
     public void Configure(EntityTypeBuilder<ProductImage> builder)
     {
-        builder.ToTable("product_images");
+        builder.ToTable("product_images", "catalog");
         builder.HasKey(i => i.Id);
         builder.Property(i => i.CreatedAt).HasDefaultValueSql("now()");
         builder.HasOne(i => i.Product)

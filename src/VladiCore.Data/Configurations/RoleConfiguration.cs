@@ -8,9 +8,11 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
 {
     public void Configure(EntityTypeBuilder<Role> builder)
     {
-        builder.ToTable("roles");
-        builder.HasKey(r => r.Id);
-        builder.Property(r => r.Name).IsRequired();
-        builder.HasIndex(r => r.Name).IsUnique();
+        builder.ToTable("roles", "core");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).IsRequired();
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+        builder.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+        builder.HasIndex(x => x.Name).IsUnique();
     }
 }
