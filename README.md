@@ -55,4 +55,6 @@ curl -X POST http://localhost:9000/auth/register -H "Content-Type: application/j
 curl -X POST http://localhost:9000/auth/login -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"Pass123!"}'
 curl http://localhost:9000/health
 curl http://localhost:9000/ping
+curl http://localhost:9000/api/categories
+curl http://localhost:9000/api/products
 ```
