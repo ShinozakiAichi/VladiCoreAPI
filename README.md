@@ -18,6 +18,8 @@ The PostgreSQL connection string must include
 `Include Error Detail=true; Search Path=public,core,catalog,sales,inventory`
 so EF Core can access all schemas.
 
+
+
 ## Build
 ```bash
 dotnet build
