@@ -23,7 +23,7 @@ public class AuthController : ControllerBase
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
     {
-        var result = await _authService.RegisterAsync(request.Email, request.Password, request.FullName);
+        var result = await _authService.RegisterAsync(request.Email, request.Password, request.Username);
         return Created(string.Empty, new AuthResponse(result.AccessToken, result.RefreshToken));
     }
 
@@ -32,7 +32,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
         var result = await _authService.LoginAsync(request.Email, request.Password);
-        return Ok(new AuthResponse(result.AccessToken, result.RefreshToken, result.Role.ToString()));
+        return Ok(new AuthResponse(result.AccessToken, result.RefreshToken, result.Role));
     }
 
     [HttpPost("refresh")]
