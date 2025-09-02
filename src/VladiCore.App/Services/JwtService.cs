@@ -23,10 +23,11 @@ public sealed class JwtService : IJwtService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expires = DateTime.UtcNow.AddMinutes(_options.AccessMinutes);
+        var roleName = user.Role?.Name ?? string.Empty;
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(ClaimTypes.Role, user.Role.ToString())
+            new Claim(ClaimTypes.Role, roleName)
         };
         var token = new JwtSecurityToken(claims: claims, expires: expires, signingCredentials: creds);
         return (new JwtSecurityTokenHandler().WriteToken(token), expires);

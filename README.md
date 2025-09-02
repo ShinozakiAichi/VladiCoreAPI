@@ -51,7 +51,7 @@ dotnet test
 
 ## Sample requests
 ```bash
-curl -X POST http://localhost:9000/auth/register -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"Pass123!","fullName":"A"}'
+curl -X POST http://localhost:9000/auth/register -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"Pass123!","username":"A"}'
 curl -X POST http://localhost:9000/auth/login -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"Pass123!"}'
 curl http://localhost:9000/health
 curl http://localhost:9000/ping

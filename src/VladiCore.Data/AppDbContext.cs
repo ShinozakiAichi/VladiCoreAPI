@@ -27,10 +27,19 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.HasPostgresExtension("citext");
-        modelBuilder.HasPostgresEnum<OrderStatus>();
-        modelBuilder.HasPostgresEnum<PaymentStatus>();
-        modelBuilder.HasPostgresEnum<Currency>();
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+        {
+            modelBuilder.Entity<ProductVariant>().Ignore(p => p.Attributes);
+            modelBuilder.Entity<Payment>().Ignore(p => p.Payload);
+        }
+        else
+        {
+            modelBuilder.HasPostgresExtension("citext");
+            modelBuilder.HasPostgresEnum<OrderStatus>();
+            modelBuilder.HasPostgresEnum<PaymentStatus>();
+            modelBuilder.HasPostgresEnum<Currency>();
+        }
     }
 }
