@@ -14,7 +14,7 @@ services:
       Jwt__Key: "${JWT_KEY}"
       # Пример: НИ КАКОГО localhost
       # Host=postgres, потому что контейнер postgres в той же сети Vladislave
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=app;Username=app;Password=secret"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=shinozaki_db;Username=aichishinozaki;Password=aichishinozaki651"
     networks:
       - vladislave
     healthcheck:
