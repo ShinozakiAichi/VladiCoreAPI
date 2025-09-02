@@ -3,29 +3,27 @@ version: "3.8"
 services:
   vladicore-api:
     image: ghcr.io/shinozakiaichi/vladicore-api:${IMAGE_TAG:-latest}
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
-    ports:
-      - "8888:8080"
-    dns_search: []
     container_name: vladicore-api
     restart: unless-stopped
-    expose:
-      - "8080"
+    ports:
+      - "8888:8080"
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:8080
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       Jwt__Key: "${JWT_KEY}"
-      ConnectionStrings__Postgres: "${POSTGRES_CONNSTR}"
-    networks: [ monitoring_monitoring_net ]
+      # Пример: НИ КАКОГО localhost
+      # Host=postgres, потому что контейнер postgres в той же сети Vladislave
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=app;Username=app;Password=secret"
+    networks:
+      - vladislave
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
 
 networks:
-  monitoring_monitoring_net:
+  vladislave:
     external: true
+    name: Vladislave
