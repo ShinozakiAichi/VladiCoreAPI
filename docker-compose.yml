@@ -13,6 +13,7 @@ services:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       Jwt__Key: "${JWT_KEY}"
       # Пример: НИ КАКОГО localhost
+      
       # Host=postgres, потому что контейнер postgres в той же сети Vladislave
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=shinozaki_db;Username=aichishinozaki;Password=aichishinozaki651;Include Error Detail=true;Search Path=public,core,catalog,sales,inventory"
     networks:
