@@ -21,6 +21,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("register")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
+    [AllowAnonymous]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
     {
         var result = await _authService.RegisterAsync(request.Email, request.Password, request.Username);
@@ -29,6 +30,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [AllowAnonymous]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
         var result = await _authService.LoginAsync(request.Email, request.Password);
@@ -37,6 +39,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("refresh")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [AllowAnonymous]
     public async Task<ActionResult<AuthResponse>> Refresh(RefreshRequest request)
     {
         var result = await _authService.RefreshAsync(request.RefreshToken);

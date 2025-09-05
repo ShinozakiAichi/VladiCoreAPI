@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using VladiCore.Api.Models.Catalog;
 using VladiCore.Data;
@@ -14,6 +15,7 @@ public class CategoriesController : ControllerBase
     public CategoriesController(AppDbContext db) => _db = db;
 
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> Get()
     {
         var items = await _db.Categories
@@ -23,6 +25,7 @@ public class CategoriesController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [AllowAnonymous]
     public async Task<ActionResult<CategoryDto>> Get(Guid id)
     {
         var c = await _db.Categories.FindAsync(id);
