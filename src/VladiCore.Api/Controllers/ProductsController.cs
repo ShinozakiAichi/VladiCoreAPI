@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using VladiCore.Api.Models.Catalog;
 using VladiCore.Data;
@@ -15,6 +16,7 @@ public class ProductsController : ControllerBase
     public ProductsController(AppDbContext db) => _db = db;
 
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<ProductDto>>> Get()
     {
         var items = await _db.Products
@@ -24,6 +26,7 @@ public class ProductsController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [AllowAnonymous]
     public async Task<ActionResult<ProductDto>> Get(Guid id)
     {
         var p = await _db.Products.FindAsync(id);

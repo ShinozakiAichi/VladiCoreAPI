@@ -2,6 +2,19 @@
 
 Backend API for VladiCore built with .NET 8.
 
+## Authentication
+Most endpoints require a valid JWT bearer token. The following endpoints are publicly accessible:
+
+- `GET /health`
+- `GET /ping`
+- `GET /api/products` and `GET /api/products/{id}`
+- `GET /api/categories` and `GET /api/categories/{id}`
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/refresh`
+
+All other endpoints require an `Authorization: Bearer <token>` header.
+
 ## Setup
 Install EF Core CLI:
 ```bash
