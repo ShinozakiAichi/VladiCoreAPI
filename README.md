@@ -24,6 +24,19 @@ Example env variable:
 ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=shinozaki_db;Username=aichishinozaki;Password=aichishinozaki651;Include Error Detail=true;Search Path=public,core,catalog,sales,inventory
 ```
 
+To allow requests from any origin:
+
+```
+Cors__AllowedOrigins__0=*
+```
+
+To limit CORS, list allowed origins explicitly:
+
+```
+Cors__AllowedOrigins__0=http://localhost:3000
+Cors__AllowedOrigins__1=https://example.com
+```
+
 
 
 ## Build
