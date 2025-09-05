@@ -34,7 +34,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
-        var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
+        var keyString = builder.Configuration["Jwt:Key"];
+        if (string.IsNullOrWhiteSpace(keyString))
+            throw new InvalidOperationException("JWT signing key is not configured.");
+
+        var key = Encoding.UTF8.GetBytes(keyString);
         o.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = false,
