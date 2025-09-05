@@ -22,8 +22,11 @@ Example env variable:
 
 ```
 ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=shinozaki_db;Username=aichishinozaki;Password=aichishinozaki651;Include Error Detail=true;Search Path=public,core,catalog,sales,inventory
-JWT_KEY=change_this_ultra_secret_key_32b_min
+Jwt__Key=change_this_ultra_secret_key_32b_min
+
 ```
+
+JWT_KEY is also supported for backward compatibility.
 
 To allow requests from any origin:
 

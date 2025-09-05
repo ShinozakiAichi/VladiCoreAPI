@@ -22,6 +22,11 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddFluentValidationAutoValidation();
+
+var legacyJwtKey = builder.Configuration["JWT_KEY"];
+if (!string.IsNullOrWhiteSpace(legacyJwtKey) && string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Key"]))
+    builder.Configuration["Jwt:Key"] = legacyJwtKey;
+
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddScoped<IJwtService, JwtService>();
