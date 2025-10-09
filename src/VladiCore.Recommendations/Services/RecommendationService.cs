@@ -22,7 +22,7 @@ namespace VladiCore.Recommendations.Services
             _connectionFactory = connectionFactory;
         }
 
-        public async Task<IReadOnlyCollection<RecommendationDto>> GetRecommendationsAsync(int productId, int take, int skip = 0)
+        public async Task<IReadOnlyList<RecommendationDto>> GetRecommendationsAsync(int productId, int take, int skip = 0)
         {
             using (var connection = _connectionFactory.Create())
             {
