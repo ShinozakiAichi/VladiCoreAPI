@@ -1,54 +1,69 @@
 using System;
-using System.Collections.Generic;
-using System.Runtime.Caching;
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Caching.Memory;
 
-namespace VladiCore.Api.Infrastructure
+namespace VladiCore.Api.Infrastructure;
+
+public interface ICacheProvider
 {
-    public interface ICacheProvider
+    T GetOrCreate<T>(string key, TimeSpan ttl, Func<T> factory);
+
+    Task<T> GetOrCreateAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory);
+
+    void Remove(string key);
+
+    void RemoveByPrefix(string prefix);
+}
+
+public class MemoryCacheProvider : ICacheProvider
+{
+    private readonly IMemoryCache _cache;
+    private readonly ConcurrentDictionary<string, byte> _keys = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+
+    public MemoryCacheProvider(IMemoryCache cache)
     {
-        T GetOrCreate<T>(string key, TimeSpan ttl, Func<T> factory);
-        void Remove(string key);
-        void RemoveByPrefix(string prefix);
+        _cache = cache;
     }
 
-    public class MemoryCacheProvider : ICacheProvider
+    public T GetOrCreate<T>(string key, TimeSpan ttl, Func<T> factory)
     {
-        private readonly ObjectCache _cache = MemoryCache.Default;
-
-        public T GetOrCreate<T>(string key, TimeSpan ttl, Func<T> factory)
+        if (_cache.TryGetValue(key, out T? value))
         {
-            if (_cache.Contains(key))
-            {
-                return (T)_cache[key];
-            }
-
-            var value = factory();
-            _cache.Set(key, value, DateTimeOffset.UtcNow.Add(ttl));
             return value;
         }
 
-        public void Remove(string key)
+        value = factory();
+        _cache.Set(key, value, ttl);
+        _keys[key] = 0;
+        return value;
+    }
+
+    public async Task<T> GetOrCreateAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory)
+    {
+        if (_cache.TryGetValue(key, out T? value))
         {
-            if (_cache.Contains(key))
-            {
-                _cache.Remove(key);
-            }
+            return value;
         }
 
-        public void RemoveByPrefix(string prefix)
-        {
-            var keys = new List<string>();
-            foreach (var item in _cache)
-            {
-                if (item.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    keys.Add(item.Key);
-                }
-            }
+        value = await factory().ConfigureAwait(false);
+        _cache.Set(key, value, ttl);
+        _keys[key] = 0;
+        return value;
+    }
 
-            foreach (var key in keys)
+    public void Remove(string key)
+    {
+        _cache.Remove(key);
+        _keys.TryRemove(key, out _);
+    }
+
+    public void RemoveByPrefix(string prefix)
+    {
+        foreach (var key in _keys.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
-                _cache.Remove(key);
+                Remove(key);
             }
         }
     }

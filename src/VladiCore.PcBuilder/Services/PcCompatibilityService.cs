@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using VladiCore.Data.Contexts;
 using VladiCore.Domain.DTOs;
@@ -16,9 +17,9 @@ namespace VladiCore.PcBuilder.Services
     /// </summary>
     public class PcCompatibilityService : IPcCompatibilityService
     {
-        private readonly VladiCoreContext _context;
+        private readonly AppDbContext _context;
 
-        public PcCompatibilityService(VladiCoreContext context)
+        public PcCompatibilityService(AppDbContext context)
         {
             _context = context;
         }
@@ -35,8 +36,8 @@ namespace VladiCore.PcBuilder.Services
             var pcCase = request.CaseId.HasValue ? await _context.Cases.FindAsync(request.CaseId.Value) : null;
             var cooler = request.CoolerId.HasValue ? await _context.Coolers.FindAsync(request.CoolerId.Value) : null;
             var storages = request.StorageIds?.Any() == true
-                ? await Task.WhenAll(request.StorageIds.Select(id => _context.Storages.FindAsync(id)))
-                : Array.Empty<Storage>();
+                ? await _context.Storages.Where(s => request.StorageIds.Contains(s.Id)).ToListAsync()
+                : new List<Storage>();
 
             ValidateSockets(cpu, motherboard, response);
             ValidateRam(ram, motherboard, response);
@@ -211,7 +212,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static bool IsSocketSupported(string socketSupportJson, string socket)
+        private static bool IsSocketSupported(string? socketSupportJson, string socket)
         {
             if (string.IsNullOrWhiteSpace(socketSupportJson) || string.IsNullOrWhiteSpace(socket))
             {

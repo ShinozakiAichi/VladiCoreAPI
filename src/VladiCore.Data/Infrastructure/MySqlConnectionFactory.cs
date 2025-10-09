@@ -1,40 +1,28 @@
-using System;
-using System.Configuration;
 using System.Data;
-using MySql.Data.MySqlClient;
+using Microsoft.Extensions.Configuration;
+using MySqlConnector;
 
-namespace VladiCore.Data.Infrastructure
+namespace VladiCore.Data.Infrastructure;
+
+public interface IMySqlConnectionFactory
 {
-    public interface IMySqlConnectionFactory
+    IDbConnection Create();
+}
+
+public class MySqlConnectionFactory : IMySqlConnectionFactory
+{
+    private readonly string _connectionString;
+
+    public MySqlConnectionFactory(IConfiguration configuration)
     {
-        IDbConnection Create();
+        _connectionString = configuration.GetConnectionString("Default")
+            ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
     }
 
-    public class MySqlConnectionFactory : IMySqlConnectionFactory
+    public IDbConnection Create()
     {
-        private readonly string _connectionString;
-
-        public MySqlConnectionFactory(string connectionStringOrName = "MySql")
-        {
-            var config = ConfigurationManager.ConnectionStrings[connectionStringOrName];
-            _connectionString = config?.ConnectionString ?? connectionStringOrName;
-
-            if (string.IsNullOrWhiteSpace(_connectionString))
-            {
-                _connectionString = Environment.GetEnvironmentVariable("VLADICORE_CONNECTION");
-            }
-
-            if (string.IsNullOrWhiteSpace(_connectionString))
-            {
-                throw new InvalidOperationException("MySQL connection string is not configured.");
-            }
-        }
-
-        public IDbConnection Create()
-        {
-            var connection = new MySqlConnection(_connectionString);
-            connection.Open();
-            return connection;
-        }
+        var connection = new MySqlConnection(_connectionString);
+        connection.Open();
+        return connection;
     }
 }
