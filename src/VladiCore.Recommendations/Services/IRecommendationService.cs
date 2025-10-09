@@ -6,6 +6,6 @@ namespace VladiCore.Recommendations.Services
 {
     public interface IRecommendationService
     {
-        Task<IReadOnlyCollection<RecommendationDto>> GetRecommendationsAsync(int productId, int take, int skip = 0);
+        Task<IReadOnlyList<RecommendationDto>> GetRecommendationsAsync(int productId, int take, int skip = 0);
     }
 }
