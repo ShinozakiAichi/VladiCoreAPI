@@ -6,6 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.ComponentModel.Annotations" Version="8.0.0" />
+    <PackageReference Include="System.ComponentModel.Annotations" Version="7.0.0" />
   </ItemGroup>
 </Project>
