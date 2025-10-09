@@ -1,6 +1,0 @@
-@VladiCore.Api_HostAddress = http://localhost:5186
-
-GET {{VladiCore.Api_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
