@@ -1,0 +1,78 @@
+### Get products
+GET http://localhost:9000/api/products?page=1&pageSize=5
+Accept: application/json
+
+### Search products by keyword
+GET http://localhost:9000/api/products?q=Ryzen
+Accept: application/json
+
+### Get product details
+GET http://localhost:9000/api/products/1
+Accept: application/json
+
+### Price history
+GET http://localhost:9000/api/products/1/price-history?bucket=day&from={{from}}&to={{to}}
+Accept: application/json
+
+### Recommendations
+GET http://localhost:9000/api/products/1/recommendations?take=5
+Accept: application/json
+
+### Track view
+POST http://localhost:9000/api/track/view
+Content-Type: application/json
+
+{
+  "productId": 1,
+  "sessionId": "demo-session",
+  "userId": 42
+}
+
+### Validate PC
+POST http://localhost:9000/api/pc/validate
+Content-Type: application/json
+
+{
+  "cpuId": 2,
+  "motherboardId": 1,
+  "ramId": 2,
+  "gpuId": 1,
+  "psuId": 2,
+  "caseId": 2,
+  "coolerId": 1,
+  "storageIds": [2,3]
+}
+
+### Auto build PC
+POST http://localhost:9000/api/pc/autobuild
+Content-Type: application/json
+
+{
+  "budget": 1500,
+  "priorities": ["gaming"],
+  "platform": "amd"
+}
+
+### Admin upsert product
+POST http://localhost:9000/api/products
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{
+  "id": 1,
+  "sku": "CPU-5600X",
+  "name": "AMD Ryzen 5 5600X",
+  "categoryId": 1,
+  "price": 239.99,
+  "attributes": "{\"componentType\":\"cpu\",\"componentId\":1}"
+}
+
+### Analytics co-purchase
+GET http://localhost:9000/api/analytics/top-copurchases?take=10
+Authorization: Bearer {{jwt}}
+Accept: application/json
+
+### Analytics top views
+GET http://localhost:9000/api/analytics/top-views?take=10
+Authorization: Bearer {{jwt}}
+Accept: application/json

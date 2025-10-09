@@ -1,0 +1,39 @@
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE Orders;
+TRUNCATE TABLE OrderItems;
+TRUNCATE TABLE ProductViews;
+
+INSERT INTO Orders (Id, UserId, CreatedAt) VALUES
+(1, 101, UTC_TIMESTAMP(6) - INTERVAL 15 DAY),
+(2, 102, UTC_TIMESTAMP(6) - INTERVAL 10 DAY),
+(3, 103, UTC_TIMESTAMP(6) - INTERVAL 5 DAY),
+(4, 104, UTC_TIMESTAMP(6) - INTERVAL 2 DAY);
+
+INSERT INTO OrderItems (OrderId, ProductId, Qty, UnitPrice) VALUES
+(1, 1, 1, 249.99),
+(1, 3, 1, 189.99),
+(1, 5, 1, 169.99),
+(2, 2, 1, 229.99),
+(2, 4, 1, 239.99),
+(2, 6, 1, 599.99),
+(3, 1, 1, 249.99),
+(3, 6, 1, 599.99),
+(3, 10, 1, 89.99),
+(4, 1, 1, 249.99),
+(4, 6, 1, 579.99),
+(4, 7, 1, 139.99);
+
+INSERT INTO ProductViews (ProductId, UserId, SessionId, ViewedAt) VALUES
+(1, 101, 'sess-a', UTC_TIMESTAMP(6) - INTERVAL 3 DAY),
+(6, 101, 'sess-a', UTC_TIMESTAMP(6) - INTERVAL 3 DAY),
+(10, 101, 'sess-a', UTC_TIMESTAMP(6) - INTERVAL 3 DAY),
+(1, 102, 'sess-b', UTC_TIMESTAMP(6) - INTERVAL 1 DAY),
+(6, 102, 'sess-b', UTC_TIMESTAMP(6) - INTERVAL 1 DAY),
+(5, 102, 'sess-b', UTC_TIMESTAMP(6) - INTERVAL 1 DAY),
+(2, 103, 'sess-c', UTC_TIMESTAMP(6) - INTERVAL 2 DAY),
+(4, 103, 'sess-c', UTC_TIMESTAMP(6) - INTERVAL 2 DAY),
+(6, 103, 'sess-c', UTC_TIMESTAMP(6) - INTERVAL 2 DAY);
+
+SET FOREIGN_KEY_CHECKS = 1;
