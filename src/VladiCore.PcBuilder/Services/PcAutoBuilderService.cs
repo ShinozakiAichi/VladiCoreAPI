@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using VladiCore.Data.Contexts;
 using VladiCore.Domain.DTOs;
@@ -16,12 +17,12 @@ namespace VladiCore.PcBuilder.Services
     /// </summary>
     public class PcAutoBuilderService : IPcAutoBuilderService
     {
-        private readonly VladiCoreContext _context;
+        private readonly AppDbContext _context;
         private readonly IPcCompatibilityService _compatibilityService;
         private readonly IPriceHistoryService _priceHistoryService;
 
         public PcAutoBuilderService(
-            VladiCoreContext context,
+            AppDbContext context,
             IPcCompatibilityService compatibilityService,
             IPriceHistoryService priceHistoryService)
         {
@@ -139,7 +140,7 @@ namespace VladiCore.PcBuilder.Services
             return charts;
         }
 
-        private async Task<BestBuild> EvaluateBuildsAsync(
+        private async Task<BestBuild?> EvaluateBuildsAsync(
             IList<ComponentOption> cpuOptions,
             IList<ComponentOption> gpuOptions,
             IList<ComponentOption> ramOptions,
@@ -151,7 +152,7 @@ namespace VladiCore.PcBuilder.Services
             int budget,
             IDictionary<string, double> priorities)
         {
-            BestBuild best = null;
+            BestBuild? best = null;
 
             foreach (var cpu in cpuOptions)
             {
@@ -248,7 +249,7 @@ namespace VladiCore.PcBuilder.Services
             return cases.First();
         }
 
-        private static ComponentOption SelectCooler(IList<ComponentOption> coolers, ComponentOption cpu, ComponentOption pcCase)
+        private static ComponentOption? SelectCooler(IList<ComponentOption> coolers, ComponentOption cpu, ComponentOption pcCase)
         {
             var caseEntity = (Domain.Entities.Case)pcCase.Entity;
             var cpuEntity = (Cpu)cpu.Entity;
@@ -337,7 +338,7 @@ namespace VladiCore.PcBuilder.Services
 
         private Dictionary<string, List<ComponentOption>> LoadComponentProducts()
         {
-            var products = _context.Products.ToList();
+            var products = _context.Products.AsNoTracking().ToList();
             var map = new Dictionary<string, List<ComponentOption>>(StringComparer.OrdinalIgnoreCase)
             {
                 { "cpu", new List<ComponentOption>() },
@@ -380,7 +381,7 @@ namespace VladiCore.PcBuilder.Services
             return map;
         }
 
-        private ComponentOption CreateOption(Product product, ComponentAttributes attributes)
+        private ComponentOption? CreateOption(Product product, ComponentAttributes attributes)
         {
             switch (attributes.ComponentType?.ToLowerInvariant())
             {
@@ -447,7 +448,7 @@ namespace VladiCore.PcBuilder.Services
             {
                 ProductId = product.Id;
                 ComponentId = componentId;
-                PartType = partType;
+                PartType = partType ?? string.Empty;
                 Entity = entity;
                 Price = product.Price;
                 Score = perfScore / (double)Math.Max(1m, product.Price);
@@ -464,7 +465,7 @@ namespace VladiCore.PcBuilder.Services
         private class ComponentAttributes
         {
             [JsonProperty("componentType")]
-            public string ComponentType { get; set; }
+            public string? ComponentType { get; set; }
 
             [JsonProperty("componentId")]
             public int ComponentId { get; set; }
@@ -472,14 +473,14 @@ namespace VladiCore.PcBuilder.Services
 
         private class BestBuild
         {
-            public ComponentOption Cpu { get; set; }
-            public ComponentOption Motherboard { get; set; }
-            public ComponentOption Ram { get; set; }
-            public ComponentOption Gpu { get; set; }
-            public ComponentOption Psu { get; set; }
-            public ComponentOption Case { get; set; }
-            public ComponentOption Cooler { get; set; }
-            public IList<ComponentOption> Storages { get; set; }
+            public required ComponentOption Cpu { get; init; }
+            public required ComponentOption Motherboard { get; init; }
+            public required ComponentOption Ram { get; init; }
+            public required ComponentOption Gpu { get; init; }
+            public required ComponentOption Psu { get; init; }
+            public required ComponentOption Case { get; init; }
+            public ComponentOption? Cooler { get; init; }
+            public required IList<ComponentOption> Storages { get; init; }
             public decimal TotalPrice { get; set; }
             public double Score { get; set; }
             public int RequiredWattage { get; set; }

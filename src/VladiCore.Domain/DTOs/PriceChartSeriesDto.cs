@@ -1,15 +1,10 @@
 using System.Collections.Generic;
 
-namespace VladiCore.Domain.DTOs
-{
-    public class PriceChartSeriesDto
-    {
-        public string PartType { get; set; }
-        public IList<PricePointDto> Series { get; set; }
+namespace VladiCore.Domain.DTOs;
 
-        public PriceChartSeriesDto()
-        {
-            Series = new List<PricePointDto>();
-        }
-    }
+public class PriceChartSeriesDto
+{
+    public string PartType { get; set; } = string.Empty;
+
+    public IList<PricePointDto> Series { get; set; } = new List<PricePointDto>();
 }

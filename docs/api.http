@@ -1,25 +1,25 @@
 ### Get products
-GET http://localhost:9000/api/products?page=1&pageSize=5
+GET http://localhost:5200/api/products?page=1&pageSize=5
 Accept: application/json
 
 ### Search products by keyword
-GET http://localhost:9000/api/products?q=Ryzen
+GET http://localhost:5200/api/products?q=Ryzen
 Accept: application/json
 
 ### Get product details
-GET http://localhost:9000/api/products/1
+GET http://localhost:5200/api/products/1
 Accept: application/json
 
 ### Price history
-GET http://localhost:9000/api/products/1/price-history?bucket=day&from={{from}}&to={{to}}
+GET http://localhost:5200/api/products/1/price-history?bucket=day&from={{from}}&to={{to}}
 Accept: application/json
 
 ### Recommendations
-GET http://localhost:9000/api/products/1/recommendations?take=5
+GET http://localhost:5200/api/products/1/recommendations?take=5
 Accept: application/json
 
 ### Track view
-POST http://localhost:9000/api/track/view
+POST http://localhost:5200/api/track/view
 Content-Type: application/json
 
 {
@@ -29,7 +29,7 @@ Content-Type: application/json
 }
 
 ### Validate PC
-POST http://localhost:9000/api/pc/validate
+POST http://localhost:5200/api/pc/validate
 Content-Type: application/json
 
 {
@@ -44,7 +44,7 @@ Content-Type: application/json
 }
 
 ### Auto build PC
-POST http://localhost:9000/api/pc/autobuild
+POST http://localhost:5200/api/pc/autobuild
 Content-Type: application/json
 
 {
@@ -54,7 +54,7 @@ Content-Type: application/json
 }
 
 ### Admin upsert product
-POST http://localhost:9000/api/products
+POST http://localhost:5200/api/products
 Authorization: Bearer {{jwt}}
 Content-Type: application/json
 
@@ -68,11 +68,11 @@ Content-Type: application/json
 }
 
 ### Analytics co-purchase
-GET http://localhost:9000/api/analytics/top-copurchases?take=10
+GET http://localhost:5200/api/analytics/top-copurchases?take=10
 Authorization: Bearer {{jwt}}
 Accept: application/json
 
 ### Analytics top views
-GET http://localhost:9000/api/analytics/top-views?take=10
+GET http://localhost:5200/api/analytics/top-views?take=10
 Authorization: Bearer {{jwt}}
 Accept: application/json

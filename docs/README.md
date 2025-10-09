@@ -1,12 +1,12 @@
 # VladiCore API
 
-VladiCore is a monolithic ASP.NET Web API 2 service backed by MySQL 8 that powers catalog, recommendations, and PC builder experiences.
+VladiCore is a monolithic ASP.NET Core 8.0 service backed by MySQL 8.0 that powers catalog, recommendations, analytics, and the PC builder experience.
 
 ## Prerequisites
 
-- .NET Framework 4.8.1 build tooling (Visual Studio 2022 or `msbuild` on Windows).
-- MySQL 8 locally or through Docker.
-- PowerShell or Bash shell for scripts.
+- .NET 8 SDK (`dotnet --info` should report version 8.x).
+- MySQL 8 locally or via Docker.
+- PowerShell or Bash for scripts.
 
 ## Quick start
 
@@ -16,14 +16,14 @@ VladiCore is a monolithic ASP.NET Web API 2 service backed by MySQL 8 that power
    docker compose -f docker/docker-compose.yml up -d
    ```
 
-2. **Create databases**
+2. **Create databases (if not using the bootstrap volume scripts)**
 
    ```sql
    CREATE DATABASE IF NOT EXISTS vladicore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
    CREATE DATABASE IF NOT EXISTS vladicore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
    ```
 
-3. **Apply migrations and seeds**
+3. **Apply schema & seed data**
 
    ```bash
    mysql -h 127.0.0.1 -P 3306 -u vladicore -pdevpass vladicore < db/migrations/mysql/001_init.sql
@@ -32,51 +32,57 @@ VladiCore is a monolithic ASP.NET Web API 2 service backed by MySQL 8 that power
    mysql -h 127.0.0.1 -P 3306 -u vladicore -pdevpass vladicore < db/seed/003_seed_orders_views.sql
    ```
 
-   Repeat the same for `vladicore_test` to hydrate the integration database.
+   Repeat the same for `vladicore_test` when you need to hydrate the integration database.
 
-4. **Configure connection string**
-
-   Update `src/VladiCore.Api/Web.config` if your MySQL credentials differ.
-
-5. **Restore NuGet packages & build**
+4. **Restore NuGet packages & build**
 
    ```bash
-   msbuild VladiCore.sln /p:RestorePackages=true
+   dotnet restore
+   dotnet build
+   ```
+
+5. **Run EF Core migrations (optional)**
+
+   The project ships with SQL scripts, but you can manage schema via EF Core:
+
+   ```bash
+   dotnet ef database update -p src/VladiCore.Data -s src/VladiCore.Api
    ```
 
 6. **Run the API**
 
-   Launch `src/VladiCore.Api` from Visual Studio (IIS Express or self-host) or run via `Microsoft.Owin.Host.HttpListener`.
+   ```bash
+   dotnet run --project src/VladiCore.Api
+   ```
 
 7. **Open Swagger**
 
-   Navigate to `http://localhost:9000/swagger` (adjust base URL) to explore the API.
+   Navigate to `http://localhost:5200/swagger` (adjust the port if you changed `launchSettings.json`).
 
 ## Testing
 
-Integration tests use the `vladicore_test` schema and will reseed data via SQL scripts.
+Integration tests target the `vladicore_test` schema and reseed the database from the SQL scripts before the first test run.
 
 ```bash
-msbuild VladiCore.Tests/VladiCore.Tests.csproj /t:VSTest
+dotnet test
 ```
 
 ## Project layout
 
-- `src/VladiCore.Api` – Web API surface, controllers, Swagger, Serilog, JWT.
-- `src/VladiCore.Domain` – Entities, DTOs, value objects.
-- `src/VladiCore.Data` – EF6 context, repositories, MySQL connection factory.
+- `src/VladiCore.Api` – ASP.NET Core 8 API, controllers, Serilog, Swagger, JWT.
+- `src/VladiCore.Domain` – Entities, DTOs, enums, value objects.
+- `src/VladiCore.Data` – EF Core 8 `AppDbContext`, repositories, MySQL connection factory.
 - `src/VladiCore.Recommendations` – Dapper-based aggregations for price history and co-purchases.
 - `src/VladiCore.PcBuilder` – Compatibility rules and greedy auto-builder.
-- `src/VladiCore.Tests` – NUnit + FluentAssertions unit/integration tests.
+- `src/VladiCore.Tests` – NUnit + FluentAssertions integration tests.
 - `db` – SQL migrations and seed scripts.
 - `docker` – Docker Compose and initialization scripts.
 - `docs/api.http` – Ready-to-use HTTP request examples.
 
 ## Observability & logging
 
-Serilog writes rolling log files to `App_Data/logs/log-*.txt` and the console. Each request receives a correlation id (`X-Correlation-Id`).
+Serilog writes rolling log files to `logs/api-*.log` and the console. Each request receives a correlation id via the `X-Correlation-Id` header.
 
 ## Security
 
-Admin endpoints require JWT bearer tokens. Configure issuer, audience, and signing key in `Web.config`. Ensure the signing key is rotated outside of source control for production.
-
+Admin endpoints require JWT bearer tokens. Configure issuer, audience, and signing key in `appsettings.json`. Rotate secrets outside of source control for production.

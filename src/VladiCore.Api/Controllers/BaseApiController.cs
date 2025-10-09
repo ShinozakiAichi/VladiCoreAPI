@@ -1,39 +1,37 @@
 using System;
-using System.Net.Http;
-using System.Web.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
 
-namespace VladiCore.Api.Controllers
+namespace VladiCore.Api.Controllers;
+
+[ApiController]
+public abstract class BaseApiController : ControllerBase
 {
-    public abstract class BaseApiController : ApiController
+    protected BaseApiController(AppDbContext dbContext, ICacheProvider cache, IRateLimiter rateLimiter)
     {
-        private VladiCoreContext _context;
+        DbContext = dbContext;
+        Cache = cache;
+        RateLimiter = rateLimiter;
+    }
 
-        protected VladiCoreContext DbContext => _context ?? (_context = ServiceContainer.CreateContext());
-        protected ICacheProvider Cache => ServiceContainer.Cache;
-        protected IRateLimiter RateLimiter => ServiceContainer.RateLimiter;
+    protected AppDbContext DbContext { get; }
 
-        protected override void Dispose(bool disposing)
+    protected ICacheProvider Cache { get; }
+
+    protected IRateLimiter RateLimiter { get; }
+
+    protected IActionResult CachedOk(object value, string etag, TimeSpan ttl)
+    {
+        var headers = Response.GetTypedHeaders();
+        headers.CacheControl = new CacheControlHeaderValue
         {
-            if (disposing)
-            {
-                _context?.Dispose();
-            }
+            Public = true,
+            MaxAge = ttl
+        };
+        headers.ETag = new EntityTagHeaderValue($"\"{etag}\"");
 
-            base.Dispose(disposing);
-        }
-
-        protected static HttpResponseMessage CreateCachedResponse(HttpRequestMessage request, object data, string etag, TimeSpan ttl)
-        {
-            var response = request.CreateResponse(System.Net.HttpStatusCode.OK, data);
-            response.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue
-            {
-                Public = true,
-                MaxAge = ttl
-            };
-            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"{etag}\"");
-            return response;
-        }
+        return Ok(value);
     }
 }

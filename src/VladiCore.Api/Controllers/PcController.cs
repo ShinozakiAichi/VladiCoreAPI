@@ -1,39 +1,51 @@
-using System.Net;
 using System.Threading.Tasks;
-using System.Web.Http;
+using Microsoft.AspNetCore.Mvc;
 using VladiCore.Api.Infrastructure;
+using VladiCore.Data.Contexts;
 using VladiCore.Domain.DTOs;
 using VladiCore.PcBuilder.Services;
 
-namespace VladiCore.Api.Controllers
+namespace VladiCore.Api.Controllers;
+
+[Route("api/pc")]
+public class PcController : BaseApiController
 {
-    [RoutePrefix("api/pc")]
-    public class PcController : BaseApiController
+    private readonly IPcCompatibilityService _compatibilityService;
+    private readonly IPcAutoBuilderService _autoBuilderService;
+
+    public PcController(
+        AppDbContext dbContext,
+        ICacheProvider cache,
+        IRateLimiter rateLimiter,
+        IPcCompatibilityService compatibilityService,
+        IPcAutoBuilderService autoBuilderService)
+        : base(dbContext, cache, rateLimiter)
     {
-        [HttpPost, Route("validate")]
-        public async Task<IHttpActionResult> ValidateBuild(PcValidateRequest request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return Content((HttpStatusCode)422, ModelState);
-            }
+        _compatibilityService = compatibilityService;
+        _autoBuilderService = autoBuilderService;
+    }
 
-            var service = ServiceContainer.CreateCompatibilityService(DbContext);
-            var result = await service.ValidateAsync(request);
-            return Ok(result);
+    [HttpPost("validate")]
+    public async Task<IActionResult> ValidateBuild([FromBody] PcValidateRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return UnprocessableEntity(ModelState);
         }
 
-        [HttpPost, Route("autobuild")]
-        public async Task<IHttpActionResult> AutoBuild(AutoBuildRequest request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return Content((HttpStatusCode)422, ModelState);
-            }
+        var result = await _compatibilityService.ValidateAsync(request);
+        return Ok(result);
+    }
 
-            var service = ServiceContainer.CreateAutoBuilderService(DbContext);
-            var result = await service.BuildAsync(request);
-            return Ok(result);
+    [HttpPost("autobuild")]
+    public async Task<IActionResult> AutoBuild([FromBody] AutoBuildRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return UnprocessableEntity(ModelState);
         }
+
+        var result = await _autoBuilderService.BuildAsync(request);
+        return Ok(result);
     }
 }

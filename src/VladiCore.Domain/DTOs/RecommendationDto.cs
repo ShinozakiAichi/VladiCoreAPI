@@ -1,10 +1,12 @@
-namespace VladiCore.Domain.DTOs
+namespace VladiCore.Domain.DTOs;
+
+public class RecommendationDto
 {
-    public class RecommendationDto
-    {
-        public int ProductId { get; set; }
-        public string Name { get; set; }
-        public decimal Price { get; set; }
-        public double Score { get; set; }
-    }
+    public int ProductId { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public decimal Price { get; set; }
+
+    public double Score { get; set; }
 }
