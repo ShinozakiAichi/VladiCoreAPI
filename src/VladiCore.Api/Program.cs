@@ -13,6 +13,7 @@ using VladiCore.PcBuilder.Services;
 using VladiCore.Recommendations.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+var config = builder.Configuration;
 
 builder.Host.UseSerilog((context, services, configuration) =>
 {
@@ -24,7 +25,7 @@ builder.Host.UseSerilog((context, services, configuration) =>
         .WriteTo.File("logs/api-.log", rollingInterval: RollingInterval.Day);
 });
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
+var connectionString = config.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -39,7 +40,7 @@ builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 builder.Services.AddScoped<IPcCompatibilityService, PcCompatibilityService>();
 builder.Services.AddScoped<IPcAutoBuilderService, PcAutoBuilderService>();
 
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+var allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? Array.Empty<string>();
 
 builder.Services.AddCors(options =>
@@ -69,7 +70,7 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var jwtSection = builder.Configuration.GetSection("Jwt");
+var jwtSection = config.GetSection("Jwt");
 var signingKey = jwtSection.GetValue<string>("SigningKey");
 if (string.IsNullOrWhiteSpace(signingKey))
 {
