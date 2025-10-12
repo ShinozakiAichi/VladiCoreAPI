@@ -5,16 +5,89 @@ VladiCore is a monolithic ASP.NET Core 8.0 service backed by MySQL 8.0 that powe
 ## Prerequisites
 
 - .NET 8 SDK (`dotnet --info` should report version 8.x).
+- Docker 24+ (for containerised workflows).
 - MySQL 8 locally or via Docker.
 - PowerShell or Bash for scripts.
 
+## Configuration
+
+All runtime configuration is sourced from environment variables. Copy the template and adjust values for your environment:
+
+```bash
+cp .env.example .env
+```
+
+Key variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `ConnectionStrings__Default` | MySQL connection string used by the API. |
+| `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey` | JWT bearer token configuration. Always replace the signing key. |
+| `ASPNETCORE_URLS` | HTTP binding inside the container (defaults to port `8080`). |
+| `API_HTTP_PORT` | Host port exposed by Docker Compose. |
+| `DOCKER_NETWORK_NAME` | Shared Docker network that contains both the API and database containers. |
+| `DOCKER_NETWORK_EXTERNAL` | Set to `true` when the shared network is created outside of Docker Compose. |
+
+> ℹ️ Secrets such as the JWT signing key must be rotated regularly and should be stored in a secure secret manager for production deployments.
+
 ## Quick start
 
-1. **Start MySQL via Docker**
+### Using Docker Compose (API attached to an external MySQL container)
+
+1. **Prepare configuration**
 
    ```bash
-   docker compose -f docker/docker-compose.yml up -d
+   cp .env.example .env # customise before first run
    ```
+
+   Update `ConnectionStrings__Default` to point to the hostname of the existing MySQL container. Both containers must share a user-defined Docker network (see the next step) and `DOCKER_NETWORK_NAME`/`DOCKER_NETWORK_EXTERNAL` should match how that network is managed.
+
+2. **Ensure network connectivity to the database container**
+
+   Create a shared network if you do not already have one and connect the database container to it:
+
+   ```bash
+   docker network create vladicore-backend # skip if the network already exists
+   docker network connect vladicore-backend <your-mysql-container-name>
+   ```
+
+   If you start the MySQL container yourself, run it on the same network, for example:
+
+   ```bash
+   docker run -d \
+     --name vladicore-mysql \
+     --network vladicore-backend \
+     -e MYSQL_ROOT_PASSWORD=rootpass \
+     -e MYSQL_DATABASE=vladicore \
+     -e MYSQL_USER=vladicore \
+     -e MYSQL_PASSWORD=devpass \
+     mysql:8.0 --default-authentication-plugin=mysql_native_password
+   ```
+
+3. **Start the API container**
+
+   ```bash
+   docker compose -f docker/docker-compose.yml up --build -d
+   ```
+
+   The API will listen on `http://localhost:${API_HTTP_PORT:-8080}` and connect to the MySQL container through the shared network using the provided connection string.
+
+### Local development (hosted runtime)
+
+1. **Start MySQL via Docker (or connect to an existing container)**
+
+   ```bash
+   docker run -d \
+     --name vladicore-mysql \
+     -p 3306:3306 \
+     -e MYSQL_ROOT_PASSWORD=rootpass \
+     -e MYSQL_DATABASE=vladicore \
+     -e MYSQL_USER=vladicore \
+     -e MYSQL_PASSWORD=devpass \
+     mysql:8.0 --default-authentication-plugin=mysql_native_password
+   ```
+
+   Alternatively, reuse a neighbour container and update the connection string accordingly.
 
 2. **Create databases (if not using the bootstrap volume scripts)**
 
@@ -54,6 +127,8 @@ VladiCore is a monolithic ASP.NET Core 8.0 service backed by MySQL 8.0 that powe
    ```bash
    dotnet run --project src/VladiCore.Api
    ```
+
+   The default launch settings expose the API on `https://localhost:7200` and `http://localhost:5200`.
 
 7. **Open Swagger**
 
