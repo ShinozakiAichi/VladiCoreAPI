@@ -1,16 +1,31 @@
 version: '3.9'
+
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: vladicore-mysql
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: vladicore-api
+    restart: unless-stopped
+    env_file:
+      - ../.env
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: vladicore
-      MYSQL_USER: vladicore
-      MYSQL_PASSWORD: devpass
-      TZ: UTC
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_URLS: ${ASPNETCORE_URLS:-http://+:8080}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: ${DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:-0}
+      ConnectionStrings__Default: "${ConnectionStrings__Default:-Server=vladicore-mysql;Port=3306;Database=vladicore;User Id=vladicore;Password=devpass;TreatTinyAsBoolean=true;CharSet=utf8mb4;}"
+      Jwt__Issuer: ${Jwt__Issuer:-VladiCore}
+      Jwt__Audience: ${Jwt__Audience:-VladiCore}
+      Jwt__SigningKey: ${Jwt__SigningKey:-replace-with-secure-key}
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default:-Information}
+      Serilog__MinimumLevel__Override__Microsoft: ${Serilog__MinimumLevel__Override__Microsoft:-Warning}
+      Serilog__MinimumLevel__Override__System: ${Serilog__MinimumLevel__Override__System:-Warning}
     ports:
-      - "3306:3306"
-    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-    volumes:
-      - ./init:/docker-entrypoint-initdb.d:ro
+      - "${API_HTTP_PORT:-8080}:8080"
+    networks:
+      - backend
+
+networks:
+  backend:
+    name: ${DOCKER_NETWORK_NAME:-vladicore-backend}
+    external: ${DOCKER_NETWORK_EXTERNAL:-true}
