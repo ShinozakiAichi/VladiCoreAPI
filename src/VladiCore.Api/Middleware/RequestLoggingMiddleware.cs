@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
 
 namespace VladiCore.Api.Middleware;
 
@@ -20,7 +21,21 @@ public class RequestLoggingMiddleware
         var correlationId = Guid.NewGuid().ToString("N");
         context.Items["CorrelationId"] = correlationId;
         context.Request.Headers.TryAdd("X-Correlation-Id", correlationId);
-        context.Response.Headers["X-Correlation-Id"] = correlationId;
+
+        context.Response.OnStarting(() =>
+        {
+            if (!context.Response.Headers.ContainsKey("X-Correlation-Id"))
+            {
+                context.Response.Headers["X-Correlation-Id"] = correlationId;
+            }
+
+            if (!context.Response.Headers.ContainsKey("X-Request-Id"))
+            {
+                context.Response.Headers["X-Request-Id"] = context.TraceIdentifier;
+            }
+
+            return Task.CompletedTask;
+        });
 
         var stopwatch = Stopwatch.StartNew();
         try
@@ -30,7 +45,6 @@ public class RequestLoggingMiddleware
         finally
         {
             stopwatch.Stop();
-            context.Response.Headers["X-Correlation-Id"] = correlationId;
             _logger.LogInformation(
                 "HTTP {Method} {Path} => {StatusCode} in {Elapsed} ms (corrId: {CorrelationId})",
                 context.Request.Method,

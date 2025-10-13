@@ -4,6 +4,9 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using MySqlConnector;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Api.Models;
 using VladiCore.Data.Contexts;
@@ -15,15 +18,18 @@ namespace VladiCore.Api.Controllers;
 public class AnalyticsController : BaseApiController
 {
     private readonly IMySqlConnectionFactory _connectionFactory;
+    private readonly ILogger<AnalyticsController> _logger;
 
     public AnalyticsController(
         AppDbContext dbContext,
         ICacheProvider cache,
         IRateLimiter rateLimiter,
-        IMySqlConnectionFactory connectionFactory)
+        IMySqlConnectionFactory connectionFactory,
+        ILogger<AnalyticsController> logger)
         : base(dbContext, cache, rateLimiter)
     {
         _connectionFactory = connectionFactory;
+        _logger = logger;
     }
 
     [HttpGet("top-copurchases")]
@@ -41,14 +47,22 @@ public class AnalyticsController : BaseApiController
                               ORDER BY Count DESC
                               LIMIT @Take";
 
-        var items = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), async () =>
+        try
         {
-            using var connection = _connectionFactory.Create();
-            var result = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
-            return result.ToList();
-        });
+            var items = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), async () =>
+            {
+                using var connection = _connectionFactory.Create();
+                var result = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
+                return result.ToList();
+            });
 
-        return Ok(items);
+            return Ok(items);
+        }
+        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
+        {
+            _logger.LogError(ex, "Analytics storage is not initialized");
+            return StorageNotInitialized();
+        }
     }
 
     [HttpGet("top-views")]
@@ -65,13 +79,40 @@ public class AnalyticsController : BaseApiController
                               ORDER BY Count DESC
                               LIMIT @Take";
 
-        var items = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), async () =>
+        try
         {
-            using var connection = _connectionFactory.Create();
-            var result = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
-            return result.ToList();
-        });
+            var items = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), async () =>
+            {
+                using var connection = _connectionFactory.Create();
+                var result = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
+                return result.ToList();
+            });
 
-        return Ok(items);
+            return Ok(items);
+        }
+        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
+        {
+            _logger.LogError(ex, "Analytics storage is not initialized");
+            return StorageNotInitialized();
+        }
+    }
+
+    private ObjectResult StorageNotInitialized()
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Title = "Storage not initialized",
+            Detail = "Database schema is missing. Migrations must be applied.",
+            Status = StatusCodes.Status503ServiceUnavailable
+        };
+
+        return StatusCode(StatusCodes.Status503ServiceUnavailable, problemDetails);
+    }
+
+    private static bool IsStorageNotInitializedError(MySqlException exception)
+    {
+        const int noSuchTableErrorCode = 1146;
+        return exception.Number == noSuchTableErrorCode ||
+            exception.Message.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase);
     }
 }
