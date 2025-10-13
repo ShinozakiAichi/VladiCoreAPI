@@ -13,7 +13,8 @@ COPY ["src/VladiCore.Data/VladiCore.Data.csproj", "src/VladiCore.Data/"]
 COPY ["src/VladiCore.Domain/VladiCore.Domain.csproj", "src/VladiCore.Domain/"]
 COPY ["src/VladiCore.PcBuilder/VladiCore.PcBuilder.csproj", "src/VladiCore.PcBuilder/"]
 COPY ["src/VladiCore.Recommendations/VladiCore.Recommendations.csproj", "src/VladiCore.Recommendations/"]
-RUN dotnet restore "VladiCore.sln"
+# Restore only the API project to avoid pulling in test projects that are not part of the build context
+RUN dotnet restore "src/VladiCore.Api/VladiCore.Api.csproj"
 COPY . .
 WORKDIR "/src/src/VladiCore.Api"
 RUN dotnet publish "VladiCore.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
