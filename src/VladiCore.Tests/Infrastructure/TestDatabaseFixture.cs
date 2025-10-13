@@ -1,10 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Threading.Tasks;
 using MySqlConnector;
 using NUnit.Framework;
+using VladiCore.Data.Infrastructure;
 
 namespace VladiCore.Tests.Infrastructure;
 
@@ -26,7 +25,7 @@ public class TestDatabaseFixture
         foreach (var file in Directory.GetFiles(root, "*.sql"))
         {
             var scriptText = await File.ReadAllTextAsync(file);
-            foreach (var statement in SplitStatements(scriptText))
+            foreach (var statement in SqlScriptParser.SplitStatements(scriptText))
             {
                 if (string.IsNullOrWhiteSpace(statement))
                 {
@@ -37,53 +36,6 @@ public class TestDatabaseFixture
                 command.CommandText = statement;
                 await command.ExecuteNonQueryAsync();
             }
-        }
-    }
-
-    private static IEnumerable<string> SplitStatements(string script)
-    {
-        var delimiter = ";";
-        var builder = new StringBuilder();
-        using var reader = new StringReader(script);
-        string? line;
-        while ((line = reader.ReadLine()) != null)
-        {
-            var trimmedLine = line.Trim();
-            if (trimmedLine.StartsWith("DELIMITER", StringComparison.OrdinalIgnoreCase))
-            {
-                var newDelimiter = trimmedLine.Substring("DELIMITER".Length).Trim();
-                if (builder.Length > 0)
-                {
-                    var pending = builder.ToString().Trim();
-                    if (!string.IsNullOrEmpty(pending))
-                    {
-                        yield return pending;
-                    }
-                    builder.Clear();
-                }
-
-                delimiter = string.IsNullOrWhiteSpace(newDelimiter) ? ";" : newDelimiter;
-                continue;
-            }
-
-            builder.AppendLine(line);
-            var current = builder.ToString().TrimEnd();
-            if (current.EndsWith(delimiter, StringComparison.Ordinal))
-            {
-                var statement = current[..^delimiter.Length].TrimEnd();
-                if (!string.IsNullOrWhiteSpace(statement))
-                {
-                    yield return statement;
-                }
-
-                builder.Clear();
-            }
-        }
-
-        var remaining = builder.ToString().Trim();
-        if (!string.IsNullOrEmpty(remaining))
-        {
-            yield return remaining;
         }
     }
 }

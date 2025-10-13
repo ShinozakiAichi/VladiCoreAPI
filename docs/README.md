@@ -123,6 +123,8 @@ Key variables:
 
    Repeat the same for `vladicore_test` when you need to hydrate the integration database.
 
+   > 💡 The API now applies pending scripts from `db/migrations/mysql` on startup. Running them manually remains useful for local debugging or to hydrate the schema before the service is available.
+
 4. **Restore NuGet packages & build**
 
    ```bash
