@@ -1,3 +1,4 @@
+using System;
 using Microsoft.EntityFrameworkCore;
 using VladiCore.Domain.Entities;
 
@@ -21,6 +22,10 @@ public class AppDbContext : DbContext
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
 
     public DbSet<ProductView> ProductViews => Set<ProductView>();
+
+    public DbSet<ProductReview> ProductReviews => Set<ProductReview>();
+
+    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
 
     public DbSet<Cpu> Cpus => Set<Cpu>();
 
@@ -63,5 +68,28 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<OrderItem>()
             .Property(i => i.UnitPrice)
             .HasColumnType("decimal(12,2)");
+
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+
+        modelBuilder.Entity<ProductReview>()
+            .Property(r => r.Photos)
+            .HasConversion(
+                photos => System.Text.Json.JsonSerializer.Serialize(photos, jsonOptions),
+                json => string.IsNullOrWhiteSpace(json)
+                    ? Array.Empty<string>()
+                    : System.Text.Json.JsonSerializer.Deserialize<string[]>(json, jsonOptions) ?? Array.Empty<string>())
+            .HasColumnType("json");
+
+        modelBuilder.Entity<ProductReview>()
+            .Property(r => r.Rating)
+            .HasColumnType("tinyint unsigned");
+
+        modelBuilder.Entity<ProductReview>()
+            .HasIndex(r => new { r.ProductId, r.IsApproved, r.CreatedAt })
+            .HasDatabaseName("IX_ProductReviews_Product_IsApproved_CreatedAt");
+
+        modelBuilder.Entity<ProductImage>()
+            .HasIndex(i => new { i.ProductId, i.CreatedAt })
+            .HasDatabaseName("IX_ProductImages_Product_CreatedAt");
     }
 }

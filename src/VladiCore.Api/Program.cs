@@ -1,12 +1,17 @@
-using System;
 using System.Text;
+using Amazon.Runtime;
+using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Serilog;
 using Serilog.Events;
 using VladiCore.Api.Infrastructure;
+using VladiCore.Api.Infrastructure.ObjectStorage;
+using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Api.Middleware;
+using VladiCore.Api.Swagger;
 using VladiCore.Data.Contexts;
 using VladiCore.Data.Infrastructure;
 using VladiCore.PcBuilder.Services;
@@ -28,6 +33,9 @@ builder.Host.UseSerilog((context, services, configuration) =>
 var connectionString = config.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
 
+builder.Services.Configure<ReviewOptions>(config.GetSection("Reviews"));
+builder.Services.Configure<S3Options>(config.GetSection("S3"));
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
@@ -39,6 +47,41 @@ builder.Services.AddScoped<IPriceHistoryService, PriceHistoryService>();
 builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 builder.Services.AddScoped<IPcCompatibilityService, PcCompatibilityService>();
 builder.Services.AddScoped<IPcAutoBuilderService, PcAutoBuilderService>();
+
+builder.Services.AddSingleton<IAmazonS3>(sp =>
+{
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<S3Options>>().Value;
+    if (string.IsNullOrWhiteSpace(options.AccessKey) || string.IsNullOrWhiteSpace(options.SecretKey))
+    {
+        throw new InvalidOperationException("S3 credentials must be configured.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Endpoint))
+    {
+        throw new InvalidOperationException("S3 endpoint must be configured.");
+    }
+
+    var s3Config = new AmazonS3Config
+    {
+        ForcePathStyle = true,
+        UseHttp = !options.UseSsl
+    };
+
+    if (Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var endpointUri))
+    {
+        s3Config.ServiceURL = endpointUri.ToString();
+    }
+    else
+    {
+        var scheme = options.UseSsl ? "https" : "http";
+        s3Config.ServiceURL = $"{scheme}://{options.Endpoint}";
+    }
+
+    var credentials = new BasicAWSCredentials(options.AccessKey, options.SecretKey);
+    return new AmazonS3Client(credentials, s3Config);
+});
+
+builder.Services.AddSingleton<IObjectStorageService, S3StorageService>();
 
 var allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? Array.Empty<string>();
@@ -68,7 +111,34 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "VladiCore API", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header. Example: Bearer {token}",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+    c.SchemaFilter<RequestExamplesSchemaFilter>();
+});
 
 var jwtSection = config.GetSection("Jwt");
 var signingKey = jwtSection.GetValue<string>("SigningKey");
@@ -92,7 +162,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("UserOnly", policy => policy.RequireRole("User"));
+});
 
 var app = builder.Build();
 

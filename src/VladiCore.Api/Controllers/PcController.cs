@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
@@ -26,6 +27,7 @@ public class PcController : BaseApiController
     }
 
     [HttpPost("validate")]
+    [AllowAnonymous]
     public async Task<IActionResult> ValidateBuild([FromBody] PcValidateRequest request)
     {
         if (!ModelState.IsValid)
@@ -38,6 +40,7 @@ public class PcController : BaseApiController
     }
 
     [HttpPost("autobuild")]
+    [AllowAnonymous]
     public async Task<IActionResult> AutoBuild([FromBody] AutoBuildRequest request)
     {
         if (!ModelState.IsValid)

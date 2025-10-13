@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
@@ -22,6 +23,7 @@ public class TrackingController : BaseApiController
     }
 
     [HttpPost("view")]
+    [AllowAnonymous]
     public async Task<IActionResult> TrackView([FromBody] TrackViewDto dto)
     {
         if (!ModelState.IsValid)
