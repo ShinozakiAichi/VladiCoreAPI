@@ -15,6 +15,7 @@ using VladiCore.Api.Middleware;
 using VladiCore.Api.Swagger;
 using VladiCore.Data.Contexts;
 using VladiCore.Data.Infrastructure;
+using VladiCore.Data.Provisioning;
 using VladiCore.PcBuilder.Services;
 using VladiCore.Recommendations.Services;
 
@@ -43,6 +44,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ICacheProvider, MemoryCacheProvider>();
 builder.Services.AddSingleton<IRateLimiter, SlidingWindowRateLimiter>();
+builder.Services.Configure<DatabaseProvisioningOptions>(config.GetSection("Database:AutoProvision"));
+builder.Services.AddSingleton<ISqlScriptDirectoryScanner, SqlScriptDirectoryScanner>();
+builder.Services.AddSingleton<ISchemaBootstrapper, SchemaBootstrapper>();
 builder.Services.AddScoped<IMySqlConnectionFactory, MySqlConnectionFactory>();
 builder.Services.AddScoped<IPriceHistoryService, PriceHistoryService>();
 builder.Services.AddScoped<IRecommendationService, RecommendationService>();
@@ -83,7 +87,7 @@ builder.Services.AddSingleton<IAmazonS3>(sp =>
 });
 
 builder.Services.AddSingleton<IObjectStorageService, S3StorageService>();
-builder.Services.AddHostedService<DatabaseSchemaInitializer>();
+builder.Services.AddHostedService<DatabaseProvisioningHostedService>();
 
 var allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? Array.Empty<string>();

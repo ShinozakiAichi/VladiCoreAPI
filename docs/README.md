@@ -112,18 +112,11 @@ Key variables:
    CREATE DATABASE IF NOT EXISTS vladicore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
    ```
 
-3. **Apply schema & seed data**
+3. **Let the API auto-provision the schema**
 
-   ```bash
-   mysql -h 127.0.0.1 -P 3306 -u vladicore -pdevpass vladicore < db/migrations/mysql/001_init.sql
-   mysql -h 127.0.0.1 -P 3306 -u vladicore -pdevpass vladicore < db/seed/001_seed_catalog.sql
-   mysql -h 127.0.0.1 -P 3306 -u vladicore -pdevpass vladicore < db/seed/002_seed_pc_parts.sql
-   mysql -h 127.0.0.1 -P 3306 -u vladicore -pdevpass vladicore < db/seed/003_seed_orders_views.sql
-   ```
+   The API applies any missing migrations from `db/migrations/mysql` every time it starts. By default it also creates the database if it is missing and skips seed scripts unless `Database__AutoProvision__ApplySeeds=true` (see below).
 
-   Repeat the same for `vladicore_test` when you need to hydrate the integration database.
-
-   > 💡 The API now applies pending scripts from `db/migrations/mysql` on startup. Running them manually remains useful for local debugging or to hydrate the schema before the service is available.
+   > 💡 You can still run the SQL scripts manually when you want to hydrate a database before the API starts or when debugging migrations locally.
 
 4. **Restore NuGet packages & build**
 
@@ -152,9 +145,21 @@ Key variables:
 
    Navigate to `http://localhost:5200/swagger` (adjust the port if you changed `launchSettings.json`).
 
+## Database auto-provisioning
+
+The API automatically provisions the schema on startup using the SQL scripts in `db/migrations/mysql`.
+
+- Feature flags live under the `Database:AutoProvision` section (see `appsettings.json`) and can be overridden via environment variables such as `Database__AutoProvision__Enabled`.
+- Default behaviour: create the database if it is missing, apply pending migrations, and skip seed scripts. Set `Database__AutoProvision__ApplySeeds=true` for local development when you need sample data.
+- Scripts must follow the `NNN_description.sql` naming convention. The provisioner records applied files in the `schema_migrations` table and runs each script inside its own transaction.
+- Log events: `DB_INIT_START`, `MIGRATION_APPLY_START`, `MIGRATION_APPLY_OK`, `MIGRATION_APPLY_FAIL`, `SEED_APPLY_START`, `SEED_APPLY_OK`, `SEED_APPLY_FAIL`, `DB_INIT_DONE`.
+- Health probe: `GET /health/db` checks connectivity, confirms sentinel tables (e.g. `Products`, `Orders`), and returns the count of applied migrations. It returns `503` when the database is unavailable or missing tables.
+
+Manual execution of the SQL files remains supported as a fallback or for debugging purposes.
+
 ## Testing
 
-Integration tests target the `vladicore_test` schema and reseed the database from the SQL scripts before the first test run.
+Integration tests target the `vladicore_test` schema. The test fixture reuses the same auto-provisioner to create the schema and populate seeds when a MySQL instance is available; tests are skipped otherwise.
 
 ```bash
 dotnet test
