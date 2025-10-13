@@ -98,12 +98,57 @@ public class DatabaseSchemaInitializer : IHostedService
 
     private static async Task EnsureMigrationsTableAsync(MySqlConnection connection, CancellationToken cancellationToken)
     {
+        var isValid = await IsMigrationsTableValidAsync(connection, cancellationToken);
+        if (!isValid)
+        {
+            await DropMigrationsTableAsync(connection, cancellationToken);
+        }
+
         const string createTableSql = $@"CREATE TABLE IF NOT EXISTS {MigrationTable} (
     script_name VARCHAR(255) NOT NULL PRIMARY KEY,
     applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
         await using var command = new MySqlCommand(createTableSql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> IsMigrationsTableValidAsync(MySqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string columnsSql = @"SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = @table
+ORDER BY ORDINAL_POSITION;";
+
+        await using var command = new MySqlCommand(columnsSql, connection);
+        command.Parameters.AddWithValue("@table", MigrationTable);
+
+        var columns = new List<MigrationTableColumnDefinition>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                columns.Add(new MigrationTableColumnDefinition(
+                    reader.GetString(reader.GetOrdinal("COLUMN_NAME")),
+                    reader.GetString(reader.GetOrdinal("DATA_TYPE")),
+                    reader.GetString(reader.GetOrdinal("COLUMN_TYPE")),
+                    string.Equals(reader.GetString(reader.GetOrdinal("IS_NULLABLE")), "YES", StringComparison.OrdinalIgnoreCase),
+                    !reader.IsDBNull(reader.GetOrdinal("COLUMN_KEY"))
+                        && reader.GetString(reader.GetOrdinal("COLUMN_KEY")).Contains("PRI", StringComparison.OrdinalIgnoreCase),
+                    reader.IsDBNull(reader.GetOrdinal("COLUMN_DEFAULT"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("COLUMN_DEFAULT"))));
+            }
+        }
+
+        return MigrationTableDefinitionValidator.IsValid(columns);
+    }
+
+    private static async Task DropMigrationsTableAsync(MySqlConnection connection, CancellationToken cancellationToken)
+    {
+        var dropSql = $"DROP TABLE IF EXISTS {MigrationTable};";
+        await using var command = new MySqlCommand(dropSql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
