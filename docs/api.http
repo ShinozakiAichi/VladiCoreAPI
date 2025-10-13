@@ -1,5 +1,5 @@
 ### Get products
-GET http://localhost:5200/api/products?page=1&pageSize=5
+GET http://localhost:5200/api/products?skip=0&take=5
 Accept: application/json
 
 ### Search products by keyword
@@ -69,10 +69,58 @@ Content-Type: application/json
 
 ### Analytics co-purchase
 GET http://localhost:5200/api/analytics/top-copurchases?take=10
-Authorization: Bearer {{jwt}}
 Accept: application/json
 
 ### Analytics top views
 GET http://localhost:5200/api/analytics/top-views?take=10
-Authorization: Bearer {{jwt}}
 Accept: application/json
+
+### List product reviews
+GET http://localhost:5200/api/products/1/reviews?skip=0&take=10&order=createdAt
+Accept: application/json
+
+### Submit product review
+POST http://localhost:5200/api/products/1/reviews
+Content-Type: application/json
+
+{
+  "rating": 5,
+  "title": "🔥",
+  "body": "Стабильно держит частоты, рекомендую",
+  "photos": [
+    "https://cdn.example.com/reviews/1.jpg"
+  ]
+}
+
+### Approve review (admin)
+POST http://localhost:5200/api/products/1/reviews/10/approve
+Authorization: Bearer {{jwt}}
+
+### Delete review (admin)
+DELETE http://localhost:5200/api/products/1/reviews/10
+Authorization: Bearer {{jwt}}
+
+### Request presigned upload (user)
+POST http://localhost:5200/api/uploads/presign
+Authorization: Bearer {{userJwt}}
+Content-Type: application/json
+
+{
+  "extension": "jpg",
+  "contentType": "image/jpeg",
+  "maxFileSize": 5000000,
+  "purpose": "reviews"
+}
+
+### Upload product image (admin)
+POST http://localhost:5200/api/products/1/images/upload
+Authorization: Bearer {{jwt}}
+Content-Type: multipart/form-data; boundary=BOUNDARY
+
+--BOUNDARY
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+{{file}}
+
+--BOUNDARY--

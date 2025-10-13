@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace VladiCore.Domain.DTOs;
 
 public class ProductDto
@@ -15,4 +18,6 @@ public class ProductDto
     public decimal? OldPrice { get; set; }
 
     public string? Attributes { get; set; }
+
+    public IReadOnlyList<ProductImageDto> Images { get; set; } = Array.Empty<ProductImageDto>();
 }

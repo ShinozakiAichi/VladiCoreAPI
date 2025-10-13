@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
 using VladiCore.Data.Repositories;
@@ -30,16 +32,18 @@ public class ProductsController : BaseApiController
     }
 
     [HttpGet]
-    public IActionResult GetProducts(int? categoryId = null, string? q = null, string sort = "price", int page = 1, int pageSize = 20)
+    [AllowAnonymous]
+    public IActionResult GetProducts(int? categoryId = null, string? q = null, string sort = "price", int skip = 0, int take = 20)
     {
-        page = Math.Max(1, page);
-        pageSize = Math.Max(1, Math.Min(100, pageSize));
+        skip = Math.Max(0, skip);
+        take = Math.Max(1, Math.Min(100, take));
 
-        var cacheKey = $"products:{categoryId}:{q}:{sort}:{page}:{pageSize}";
+        var cacheKey = $"products:{categoryId}:{q}:{sort}:{skip}:{take}";
         var result = Cache.GetOrCreate(cacheKey, TimeSpan.FromSeconds(30), () =>
         {
             var repository = new EfRepository<Product>(DbContext);
-            var query = repository.Query();
+            IQueryable<Product> query = repository.Query().AsNoTracking();
+            query = query.Include(p => p.Images);
 
             if (categoryId.HasValue)
             {
@@ -61,8 +65,8 @@ public class ProductsController : BaseApiController
 
             var total = query.Count();
             var items = query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
+                .Skip(skip)
+                .Take(take)
                 .ToList()
                 .Select(ToDto)
                 .ToList();
@@ -75,10 +79,12 @@ public class ProductsController : BaseApiController
     }
 
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetProduct(int id)
     {
         var repository = new EfRepository<Product>(DbContext);
-        var product = await repository.FindAsync(id);
+        var query = repository.Query().AsNoTracking().Include(p => p.Images);
+        var product = await query.FirstOrDefaultAsync(p => p.Id == id);
         if (product == null)
         {
             return NotFound();
@@ -89,6 +95,7 @@ public class ProductsController : BaseApiController
     }
 
     [HttpGet("{id:int}/price-history")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetPriceHistory(int id, DateTime? from = null, DateTime? to = null, string bucket = "day")
     {
         var now = DateTime.UtcNow;
@@ -101,6 +108,7 @@ public class ProductsController : BaseApiController
     }
 
     [HttpGet("{id:int}/recommendations")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetRecommendations(int id, int take = 10, int skip = 0)
     {
         var cacheKey = $"reco:{id}:{take}:{skip}";
@@ -121,7 +129,18 @@ public class ProductsController : BaseApiController
             CategoryId = product.CategoryId,
             Price = product.Price,
             OldPrice = product.OldPrice,
-            Attributes = product.Attributes
+            Attributes = product.Attributes,
+            Images = product.Images
+                .OrderByDescending(i => i.CreatedAt)
+                .Select(image => new ProductImageDto
+                {
+                    Id = image.Id,
+                    Key = image.ObjectKey,
+                    Url = image.Url,
+                    ThumbnailUrl = image.ThumbnailUrl,
+                    CreatedAt = image.CreatedAt
+                })
+                .ToList()
         };
     }
 }
@@ -130,6 +149,7 @@ internal static class ProductExtensions
 {
     public static string UpdatedAt(this Product product)
     {
-        return $"{product.Price}:{product.OldPrice}:{product.Attributes}";
+        var imageStamp = string.Join('|', product.Images.OrderBy(i => i.Id).Select(i => i.ObjectKey));
+        return $"{product.Price}:{product.OldPrice}:{product.Attributes}:{imageStamp}";
     }
 }

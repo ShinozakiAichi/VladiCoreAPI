@@ -23,6 +23,8 @@ Key variables:
 | --- | --- |
 | `ConnectionStrings__Default` | MySQL connection string used by the API. |
 | `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey` | JWT bearer token configuration. Always replace the signing key. |
+| `S3__Endpoint`, `S3__Bucket`, `S3__AccessKey`, `S3__SecretKey`, `S3__UseSsl`, `S3__CdnBaseUrl` | S3/MinIO-compatible object storage used for product assets and review photos. |
+| `Reviews__RequireAuthentication` | Set to `true` to require authenticated users for review submission and presign operations. |
 | `ASPNETCORE_URLS` | HTTP binding inside the container (defaults to port `8080`). |
 | `API_HTTP_PORT` | Host port exposed by Docker Compose. |
 | `DOCKER_NETWORK_NAME` | Shared Docker network that contains both the API and database containers. |
@@ -64,7 +66,21 @@ Key variables:
      mysql:8.0 --default-authentication-plugin=mysql_native_password
    ```
 
-3. **Start the API container**
+3. **Start MinIO (optional but recommended for local image uploads)**
+
+   ```bash
+   docker run -d \
+     --name vladicore-minio \
+     -p 9000:9000 \
+     -p 9001:9001 \
+     -e MINIO_ROOT_USER=minioadmin \
+     -e MINIO_ROOT_PASSWORD=minioadmin \
+     quay.io/minio/minio server /data --console-address ":9001"
+   ```
+
+   Update the `S3__Endpoint`/`S3__Bucket` variables if you choose a different host or bucket name.
+
+4. **Start the API container**
 
    ```bash
    docker compose -f docker/docker-compose.yml up --build -d
@@ -145,6 +161,8 @@ dotnet test
 ## Project layout
 
 - `src/VladiCore.Api` – ASP.NET Core 8 API, controllers, Serilog, Swagger, JWT.
+- `src/VladiCore.Api/Controllers/ReviewsController` – product review CRUD with moderation workflow.
+- `src/VladiCore.Api/Controllers/UploadsController` – presigned S3 uploads for review photos.
 - `src/VladiCore.Domain` – Entities, DTOs, enums, value objects.
 - `src/VladiCore.Data` – EF Core 8 `AppDbContext`, repositories, MySQL connection factory.
 - `src/VladiCore.Recommendations` – Dapper-based aggregations for price history and co-purchases.
@@ -161,3 +179,5 @@ Serilog writes rolling log files to `logs/api-*.log` and the console. Each reque
 ## Security
 
 Admin endpoints require JWT bearer tokens. Configure issuer, audience, and signing key in `appsettings.json`. Rotate secrets outside of source control for production.
+
+Public catalog, analytics, tracking, and PC builder endpoints now allow anonymous access. Catalogue mutations, review moderation, and product asset uploads require the `Admin` role, while presign operations honour the `Reviews__RequireAuthentication` flag and accept authenticated `User` or `Admin` tokens.

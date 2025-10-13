@@ -26,4 +26,8 @@ public class Product
     public ICollection<OrderItem> OrderItems { get; set; } = new HashSet<OrderItem>();
 
     public ICollection<ProductPriceHistory> PriceHistory { get; set; } = new HashSet<ProductPriceHistory>();
+
+    public ICollection<ProductReview> Reviews { get; set; } = new HashSet<ProductReview>();
+
+    public ICollection<ProductImage> Images { get; set; } = new HashSet<ProductImage>();
 }

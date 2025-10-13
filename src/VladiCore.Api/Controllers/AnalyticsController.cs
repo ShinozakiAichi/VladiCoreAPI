@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +11,6 @@ using VladiCore.Data.Infrastructure;
 
 namespace VladiCore.Api.Controllers;
 
-[Authorize]
 [Route("api/analytics")]
 public class AnalyticsController : BaseApiController
 {
@@ -27,8 +27,11 @@ public class AnalyticsController : BaseApiController
     }
 
     [HttpGet("top-copurchases")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetTopCoPurchases(DateTime? from = null, DateTime? to = null, int take = 50)
     {
+        take = Math.Max(1, Math.Min(100, take));
+        var cacheKey = $"analytics:copurchases:{from:O}:{to:O}:{take}";
         const string sql = @"SELECT oi.ProductId AS ProductId, p.Name, p.Price, COUNT(*) AS Count
                               FROM OrderItems oi
                               JOIN Orders o ON oi.OrderId = o.Id
@@ -38,14 +41,22 @@ public class AnalyticsController : BaseApiController
                               ORDER BY Count DESC
                               LIMIT @Take";
 
-        using var connection = _connectionFactory.Create();
-        var items = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
+        var items = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), async () =>
+        {
+            using var connection = _connectionFactory.Create();
+            var result = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
+            return result.ToList();
+        });
+
         return Ok(items);
     }
 
     [HttpGet("top-views")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetTopViews(DateTime? from = null, DateTime? to = null, int take = 50)
     {
+        take = Math.Max(1, Math.Min(100, take));
+        var cacheKey = $"analytics:topviews:{from:O}:{to:O}:{take}";
         const string sql = @"SELECT pv.ProductId, p.Name, p.Price, COUNT(*) AS Count
                               FROM ProductViews pv
                               JOIN Products p ON p.Id = pv.ProductId
@@ -54,8 +65,13 @@ public class AnalyticsController : BaseApiController
                               ORDER BY Count DESC
                               LIMIT @Take";
 
-        using var connection = _connectionFactory.Create();
-        var items = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
+        var items = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), async () =>
+        {
+            using var connection = _connectionFactory.Create();
+            var result = await connection.QueryAsync<AnalyticsItemDto>(sql, new { From = from, To = to, Take = take });
+            return result.ToList();
+        });
+
         return Ok(items);
     }
 }
