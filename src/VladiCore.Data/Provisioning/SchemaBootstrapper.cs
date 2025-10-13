@@ -118,15 +118,6 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
 
     private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        var migrationScripts = _scriptScanner.GetOrderedScripts(_migrationsDirectory);
-        if (migrationScripts.Count == 0)
-        {
-            _logger.LogInformation(
-                "No migration scripts found in '{Directory}'. Skipping schema migrations.",
-                _migrationsDirectory);
-            return;
-        }
-
         await using var connection = new MySqlConnection(_connectionString);
         try
         {
@@ -139,6 +130,16 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
         }
 
         await EnsureMigrationTableAsync(connection, cancellationToken);
+
+        var migrationScripts = _scriptScanner.GetOrderedScripts(_migrationsDirectory);
+        if (migrationScripts.Count == 0)
+        {
+            _logger.LogInformation(
+                "No migration scripts found in '{Directory}'. Skipping schema migrations.",
+                _migrationsDirectory);
+            return;
+        }
+
         var appliedScripts = await LoadAppliedScriptsAsync(connection, cancellationToken);
 
         foreach (var script in migrationScripts)

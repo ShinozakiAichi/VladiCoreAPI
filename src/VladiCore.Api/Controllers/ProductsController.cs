@@ -84,13 +84,10 @@ public class ProductsController : BaseApiController
                 return new { total, items };
             });
         }
-        catch (MySqlException ex) when (IsMissingTableError(ex))
+        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
         {
             _logger.LogError(ex, "Product catalog storage is not initialized");
-            return Problem(
-                title: "Product catalog unavailable",
-                detail: "Product catalog data is temporarily unavailable. Please try again later.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
+            return StorageNotInitialized();
         }
 
         var etag = HashUtility.Compute(System.Text.Json.JsonSerializer.Serialize(result));
@@ -101,16 +98,24 @@ public class ProductsController : BaseApiController
     [AllowAnonymous]
     public async Task<IActionResult> GetProduct(int id)
     {
-        var repository = new EfRepository<Product>(DbContext);
-        var query = repository.Query().AsNoTracking().Include(p => p.Images);
-        var product = await query.FirstOrDefaultAsync(p => p.Id == id);
-        if (product == null)
+        try
         {
-            return NotFound();
-        }
+            var repository = new EfRepository<Product>(DbContext);
+            var query = repository.Query().AsNoTracking().Include(p => p.Images);
+            var product = await query.FirstOrDefaultAsync(p => p.Id == id);
+            if (product == null)
+            {
+                return NotFound();
+            }
 
-        var etag = HashUtility.Compute($"product:{product.Id}:{product.Price}:{product.UpdatedAt()}");
-        return CachedOk(ToDto(product), etag, TimeSpan.FromSeconds(60));
+            var etag = HashUtility.Compute($"product:{product.Id}:{product.Price}:{product.UpdatedAt()}");
+            return CachedOk(ToDto(product), etag, TimeSpan.FromSeconds(60));
+        }
+        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
+        {
+            _logger.LogError(ex, "Product catalog storage is not initialized");
+            return StorageNotInitialized();
+        }
     }
 
     [HttpGet("{id:int}/price-history")]
@@ -121,9 +126,17 @@ public class ProductsController : BaseApiController
         var fromDate = from ?? now.AddDays(-30);
         var toDate = to ?? now;
 
-        var series = await _priceHistoryService.GetSeriesAsync(id, fromDate, toDate, bucket);
-        var etag = HashUtility.Compute($"history:{id}:{fromDate:O}:{toDate:O}:{bucket}:{series.Count}");
-        return CachedOk(series, etag, TimeSpan.FromSeconds(60));
+        try
+        {
+            var series = await _priceHistoryService.GetSeriesAsync(id, fromDate, toDate, bucket);
+            var etag = HashUtility.Compute($"history:{id}:{fromDate:O}:{toDate:O}:{bucket}:{series.Count}");
+            return CachedOk(series, etag, TimeSpan.FromSeconds(60));
+        }
+        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
+        {
+            _logger.LogError(ex, "Product catalog storage is not initialized");
+            return StorageNotInitialized();
+        }
     }
 
     [HttpGet("{id:int}/recommendations")]
@@ -138,10 +151,23 @@ public class ProductsController : BaseApiController
         return CachedOk(recommendations, etag, TimeSpan.FromSeconds(300));
     }
 
-    private static bool IsMissingTableError(MySqlException exception)
+    private ObjectResult StorageNotInitialized()
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Title = "Storage not initialized",
+            Detail = "Database schema is missing. Migrations must be applied.",
+            Status = StatusCodes.Status503ServiceUnavailable
+        };
+
+        return StatusCode(StatusCodes.Status503ServiceUnavailable, problemDetails);
+    }
+
+    private static bool IsStorageNotInitializedError(MySqlException exception)
     {
         const int noSuchTableErrorCode = 1146;
-        return exception.Number == noSuchTableErrorCode;
+        return exception.Number == noSuchTableErrorCode ||
+            exception.Message.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase);
     }
 
     private static ProductDto ToDto(Product product)

@@ -40,6 +40,19 @@ public sealed class HealthController : ControllerBase
             await using var connection = _connectionFactory.Create() as MySqlConnection
                 ?? throw new InvalidOperationException("MySqlConnectionFactory must produce MySqlConnection instances.");
 
+            var appliedMigrations = await CountMigrationsAsync(connection, cancellationToken);
+
+            if (appliedMigrations == 0)
+            {
+                var missingSentinelTables = await CollectMissingTablesAsync(connection, cancellationToken);
+                return Ok(new
+                {
+                    db = "degraded",
+                    migrations = appliedMigrations,
+                    missing = missingSentinelTables
+                });
+            }
+
             var missingTables = new List<string>();
             foreach (var table in SentinelTables)
             {
@@ -48,8 +61,6 @@ public sealed class HealthController : ControllerBase
                     missingTables.Add(table);
                 }
             }
-
-            var appliedMigrations = await CountMigrationsAsync(connection, cancellationToken);
 
             if (missingTables.Count > 0)
             {
@@ -74,6 +85,22 @@ public sealed class HealthController : ControllerBase
         }
     }
 
+    private static async Task<IReadOnlyCollection<string>> CollectMissingTablesAsync(
+        MySqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var missingTables = new List<string>();
+        foreach (var table in SentinelTables)
+        {
+            if (!await TableExistsAsync(connection, table, cancellationToken))
+            {
+                missingTables.Add(table);
+            }
+        }
+
+        return missingTables;
+    }
+
     private static async Task<bool> TableExistsAsync(MySqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
         const string sql = @"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = @table";
@@ -87,8 +114,16 @@ public sealed class HealthController : ControllerBase
     private static async Task<int> CountMigrationsAsync(MySqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = "SELECT COUNT(*) FROM schema_migrations";
-        await using var command = new MySqlCommand(sql, connection);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+
+        try
+        {
+            await using var command = new MySqlCommand(sql, connection);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        }
+        catch (MySqlException)
+        {
+            return 0;
+        }
     }
 }
