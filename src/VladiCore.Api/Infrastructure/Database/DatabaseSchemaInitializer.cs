@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
@@ -17,16 +18,16 @@ public class DatabaseSchemaInitializer : IHostedService
     private const string MigrationTable = "schema_migrations";
     private readonly IHostEnvironment _environment;
     private readonly ILogger<DatabaseSchemaInitializer> _logger;
-    private readonly IMySqlConnectionFactory _connectionFactory;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public DatabaseSchemaInitializer(
         IHostEnvironment environment,
         ILogger<DatabaseSchemaInitializer> logger,
-        IMySqlConnectionFactory connectionFactory)
+        IServiceScopeFactory scopeFactory)
     {
         _environment = environment;
         _logger = logger;
-        _connectionFactory = connectionFactory;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -53,7 +54,9 @@ public class DatabaseSchemaInitializer : IHostedService
             return;
         }
 
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var connectionFactory = scope.ServiceProvider.GetRequiredService<IMySqlConnectionFactory>();
+        await using var connection = await OpenConnectionAsync(connectionFactory, cancellationToken);
         await EnsureMigrationsTableAsync(connection, cancellationToken);
 
         var scripts = Directory
@@ -76,9 +79,9 @@ public class DatabaseSchemaInitializer : IHostedService
         }
     }
 
-    private async Task<MySqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+    private async Task<MySqlConnection> OpenConnectionAsync(IMySqlConnectionFactory connectionFactory, CancellationToken cancellationToken)
     {
-        var rawConnection = _connectionFactory.Create();
+        var rawConnection = connectionFactory.Create();
         if (rawConnection is not MySqlConnection connection)
         {
             rawConnection.Dispose();
