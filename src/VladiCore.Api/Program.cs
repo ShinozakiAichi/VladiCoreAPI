@@ -8,6 +8,7 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using Serilog.Events;
 using VladiCore.Api.Infrastructure;
+using VladiCore.Api.Infrastructure.Database;
 using VladiCore.Api.Infrastructure.ObjectStorage;
 using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Api.Middleware;
@@ -82,6 +83,7 @@ builder.Services.AddSingleton<IAmazonS3>(sp =>
 });
 
 builder.Services.AddSingleton<IObjectStorageService, S3StorageService>();
+builder.Services.AddHostedService<DatabaseSchemaInitializer>();
 
 var allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? Array.Empty<string>();
