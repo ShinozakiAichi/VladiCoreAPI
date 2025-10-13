@@ -2,8 +2,11 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using MySqlConnector;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
 using VladiCore.Data.Repositories;
@@ -18,17 +21,20 @@ public class ProductsController : BaseApiController
 {
     private readonly IPriceHistoryService _priceHistoryService;
     private readonly IRecommendationService _recommendationService;
+    private readonly ILogger<ProductsController> _logger;
 
     public ProductsController(
         AppDbContext dbContext,
         ICacheProvider cache,
         IRateLimiter rateLimiter,
         IPriceHistoryService priceHistoryService,
-        IRecommendationService recommendationService)
+        IRecommendationService recommendationService,
+        ILogger<ProductsController> logger)
         : base(dbContext, cache, rateLimiter)
     {
         _priceHistoryService = priceHistoryService;
         _recommendationService = recommendationService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -39,40 +45,53 @@ public class ProductsController : BaseApiController
         take = Math.Max(1, Math.Min(100, take));
 
         var cacheKey = $"products:{categoryId}:{q}:{sort}:{skip}:{take}";
-        var result = Cache.GetOrCreate(cacheKey, TimeSpan.FromSeconds(30), () =>
+        object result;
+
+        try
         {
-            var repository = new EfRepository<Product>(DbContext);
-            IQueryable<Product> query = repository.Query().AsNoTracking();
-            query = query.Include(p => p.Images);
-
-            if (categoryId.HasValue)
+            result = Cache.GetOrCreate(cacheKey, TimeSpan.FromSeconds(30), () =>
             {
-                query = query.Where(p => p.CategoryId == categoryId.Value);
-            }
+                var repository = new EfRepository<Product>(DbContext);
+                IQueryable<Product> query = repository.Query().AsNoTracking();
+                query = query.Include(p => p.Images);
 
-            if (!string.IsNullOrWhiteSpace(q))
-            {
-                query = query.Where(p => p.Name.Contains(q));
-            }
+                if (categoryId.HasValue)
+                {
+                    query = query.Where(p => p.CategoryId == categoryId.Value);
+                }
 
-            query = sort switch
-            {
-                "price" => query.OrderBy(p => p.Price),
-                "-price" => query.OrderByDescending(p => p.Price),
-                "name" => query.OrderBy(p => p.Name),
-                _ => query.OrderBy(p => p.Id)
-            };
+                if (!string.IsNullOrWhiteSpace(q))
+                {
+                    query = query.Where(p => p.Name.Contains(q));
+                }
 
-            var total = query.Count();
-            var items = query
-                .Skip(skip)
-                .Take(take)
-                .ToList()
-                .Select(ToDto)
-                .ToList();
+                query = sort switch
+                {
+                    "price" => query.OrderBy(p => p.Price),
+                    "-price" => query.OrderByDescending(p => p.Price),
+                    "name" => query.OrderBy(p => p.Name),
+                    _ => query.OrderBy(p => p.Id)
+                };
 
-            return new { total, items };
-        });
+                var total = query.Count();
+                var items = query
+                    .Skip(skip)
+                    .Take(take)
+                    .ToList()
+                    .Select(ToDto)
+                    .ToList();
+
+                return new { total, items };
+            });
+        }
+        catch (MySqlException ex) when (IsMissingTableError(ex))
+        {
+            _logger.LogError(ex, "Product catalog storage is not initialized");
+            return Problem(
+                title: "Product catalog unavailable",
+                detail: "Product catalog data is temporarily unavailable. Please try again later.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
 
         var etag = HashUtility.Compute(System.Text.Json.JsonSerializer.Serialize(result));
         return CachedOk(result, etag, TimeSpan.FromSeconds(60));
@@ -117,6 +136,12 @@ public class ProductsController : BaseApiController
 
         var etag = HashUtility.Compute($"reco:{id}:{take}:{skip}:{recommendations.Count}");
         return CachedOk(recommendations, etag, TimeSpan.FromSeconds(300));
+    }
+
+    private static bool IsMissingTableError(MySqlException exception)
+    {
+        const int noSuchTableErrorCode = 1146;
+        return exception.Number == noSuchTableErrorCode;
     }
 
     private static ProductDto ToDto(Product product)
