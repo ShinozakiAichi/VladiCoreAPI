@@ -13,6 +13,4 @@ public class RefreshToken
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? RevokedAt { get; set; }
-
-    public ApplicationUser? User { get; set; }
 }

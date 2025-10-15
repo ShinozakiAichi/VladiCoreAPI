@@ -34,7 +34,5 @@ public class ProductReview
 
     public Product? Product { get; set; }
 
-    public ApplicationUser? User { get; set; }
-
     public ICollection<ProductReviewVote> Votes { get; set; } = new List<ProductReviewVote>();
 }

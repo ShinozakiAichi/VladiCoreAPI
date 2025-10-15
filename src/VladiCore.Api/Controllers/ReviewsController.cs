@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Data.Contexts;
+using VladiCore.Data.Identity;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
 using VladiCore.Domain.Services;
@@ -65,34 +66,39 @@ public class ReviewsController : BaseApiController
         var cacheKey = $"product:{productId}:reviews:{skip}:{take}:{sort}";
         var result = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(2), async () =>
         {
-            IQueryable<ProductReview> query = DbContext.ProductReviews
+            var baseQuery = DbContext.ProductReviews
                 .AsNoTracking()
-                .Where(r => r.ProductId == productId && r.Status == ReviewStatus.Approved)
-                .Include(r => r.User);
+                .Where(r => r.ProductId == productId && r.Status == ReviewStatus.Approved);
 
-            query = sort switch
+            var orderedQuery = sort switch
             {
-                "createdat" => query.OrderBy(r => r.CreatedAt),
-                "-usefulup" => query
+                "createdat" => baseQuery.OrderBy(r => r.CreatedAt),
+                "-usefulup" => baseQuery
                     .OrderByDescending(r => r.UsefulUp)
                     .ThenByDescending(r => r.CreatedAt),
-                "rating" => query
+                "rating" => baseQuery
                     .OrderByDescending(r => r.Rating)
                     .ThenByDescending(r => r.CreatedAt),
-                "-rating" => query
+                "-rating" => baseQuery
                     .OrderBy(r => r.Rating)
                     .ThenBy(r => r.CreatedAt),
-                _ => query.OrderByDescending(r => r.CreatedAt)
+                _ => baseQuery.OrderByDescending(r => r.CreatedAt)
             };
 
-            var total = await query.CountAsync(cancellationToken).ConfigureAwait(false);
-            var items = await query
+            var total = await baseQuery.CountAsync(cancellationToken).ConfigureAwait(false);
+            var items = await orderedQuery
                 .Skip(skip)
                 .Take(take)
+                .GroupJoin(
+                    DbContext.Users.AsNoTracking(),
+                    review => review.UserId,
+                    user => user.Id,
+                    (review, users) => new { review, users })
+                .SelectMany(x => x.users.DefaultIfEmpty(), (x, user) => new { x.review, user })
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            var dtos = items.Select(ToDto).ToList();
+            var dtos = items.Select(item => ToDto(item.review, item.user)).ToList();
             return new PagedResult<ReviewDto>
             {
                 Items = dtos,
@@ -193,7 +199,12 @@ public class ReviewsController : BaseApiController
         Cache.RemoveByPrefix($"products:{productId}");
         Cache.RemoveByPrefix("products:list");
 
-        var dto = ToDto(review);
+        var user = await DbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == review.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var dto = ToDto(review, user);
         return CreatedAtAction(nameof(GetReviews), new { productId, skip = 0, take = 1 }, dto);
     }
 
@@ -212,7 +223,6 @@ public class ReviewsController : BaseApiController
 
         var review = await DbContext.ProductReviews
             .IgnoreQueryFilters()
-            .Include(r => r.User)
             .FirstOrDefaultAsync(r => r.Id == reviewId && r.ProductId == productId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -295,7 +305,12 @@ public class ReviewsController : BaseApiController
         Cache.RemoveByPrefix($"products:{productId}");
         Cache.RemoveByPrefix("products:list");
 
-        return Ok(ToDto(review));
+        var user = await DbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == review.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Ok(ToDto(review, user));
     }
 
     [HttpPost("{reviewId:long}/photos")]
@@ -313,7 +328,6 @@ public class ReviewsController : BaseApiController
 
         var review = await DbContext.ProductReviews
             .IgnoreQueryFilters()
-            .Include(r => r.User)
             .FirstOrDefaultAsync(r => r.Id == reviewId && r.ProductId == productId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -371,7 +385,12 @@ public class ReviewsController : BaseApiController
         Cache.RemoveByPrefix($"products:{productId}");
         Cache.RemoveByPrefix("products:list");
 
-        return Ok(ToDto(review));
+        var user = await DbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == review.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Ok(ToDto(review, user));
     }
 
     [HttpDelete("{reviewId:long}")]
@@ -547,14 +566,14 @@ public class ReviewsController : BaseApiController
         return AllowedSorts.Contains(normalized) ? normalized : "-createdat";
     }
 
-    internal static ReviewDto ToDto(ProductReview review)
+    internal static ReviewDto ToDto(ProductReview review, ApplicationUser? user = null)
     {
         return new ReviewDto
         {
             Id = review.Id,
             ProductId = review.ProductId,
             UserId = review.UserId,
-            UserDisplay = review.User?.DisplayName ?? review.User?.Email,
+            UserDisplay = user?.DisplayName ?? user?.Email,
             Rating = review.Rating,
             Title = review.Title,
             Text = review.Text,

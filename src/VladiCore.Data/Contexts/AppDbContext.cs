@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using VladiCore.Data.Identity;
 using VladiCore.Domain.Entities;
 
 namespace VladiCore.Data.Contexts;
@@ -114,6 +115,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
             .HasDatabaseName("IX_ProductReviews_User_Product");
 
         modelBuilder.Entity<ProductReview>()
+            .HasOne<ApplicationUser>()
+            .WithMany(u => u.Reviews)
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ProductReview>()
             .HasQueryFilter(r => !r.IsDeleted);
 
         modelBuilder.Entity<ProductReviewVote>()
@@ -127,6 +134,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
             .HasOne(v => v.Review)
             .WithMany(r => r.Votes)
             .HasForeignKey(v => v.ReviewId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RefreshToken>()
+            .HasOne<ApplicationUser>()
+            .WithMany(u => u.RefreshTokens)
+            .HasForeignKey(t => t.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ProductImage>()
