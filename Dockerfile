@@ -28,6 +28,7 @@ RUN dotnet publish "VladiCore.Api.csproj" -c Release -o /app/publish /p:UseAppHo
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish ./
+COPY --from=build /src/src/VladiCore.Api/appsettings.json ./
 
 # Move SQL scripts from the build stage into the final image so the
 # SchemaBootstrapper can discover and execute them at runtime.
