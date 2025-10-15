@@ -141,6 +141,10 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
             return;
         }
 
+        var scriptContents = await LoadMigrationScriptContentsAsync(migrationScripts, cancellationToken);
+
+        await SyncSchemaAsync(connection, migrationScripts, scriptContents, cancellationToken);
+
         var appliedScripts = await LoadAppliedScriptsAsync(connection, cancellationToken);
 
         foreach (var script in migrationScripts)
@@ -154,12 +158,11 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
             var stopwatch = Stopwatch.StartNew();
             _logger.LogInformation("MIGRATION_APPLY_START {Script}", script.Name);
 
-            var scriptContent = await File.ReadAllTextAsync(script.FullPath, Encoding.UTF8, cancellationToken);
+            var scriptContent = scriptContents[script.Name];
 
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             try
             {
-                await EnsureSchemaFromScriptAsync(connection, transaction, scriptContent, cancellationToken);
                 await ExecuteSqlBatchAsync(connection, transaction, scriptContent, cancellationToken);
                 await InsertMigrationRowAsync(connection, transaction, script.Name, _options.TimeoutSeconds, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
@@ -177,6 +180,21 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
                 throw;
             }
         }
+    }
+
+    private static async Task<Dictionary<string, string>> LoadMigrationScriptContentsAsync(
+        IReadOnlyList<SqlScriptFile> scripts,
+        CancellationToken cancellationToken)
+    {
+        var contents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var script in scripts)
+        {
+            var content = await File.ReadAllTextAsync(script.FullPath, Encoding.UTF8, cancellationToken);
+            contents[script.Name] = content;
+        }
+
+        return contents;
     }
 
     private async Task ApplySeedsAsync(CancellationToken cancellationToken)
@@ -257,6 +275,79 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
         return applied;
     }
 
+    private async Task SyncSchemaAsync(
+        MySqlConnection connection,
+        IReadOnlyList<SqlScriptFile> scripts,
+        IReadOnlyDictionary<string, string> scriptContents,
+        CancellationToken cancellationToken)
+    {
+        var aggregatedTables = new Dictionary<string, TableEnsurePlan>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var script in scripts)
+        {
+            if (!scriptContents.TryGetValue(script.Name, out var content))
+            {
+                continue;
+            }
+
+            var plan = MigrationSchemaPlan.FromScript(content);
+            if (plan.IsEmpty)
+            {
+                continue;
+            }
+
+            foreach (var table in plan.Tables)
+            {
+                if (aggregatedTables.TryGetValue(table.Name, out var existing))
+                {
+                    aggregatedTables[table.Name] = existing.Merge(table);
+                }
+                else
+                {
+                    aggregatedTables[table.Name] = table.Clone();
+                }
+            }
+        }
+
+        if (aggregatedTables.Count == 0)
+        {
+            return;
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var snapshot = await LoadSchemaSnapshotAsync(connection, transaction, cancellationToken);
+
+            foreach (var table in aggregatedTables.Values)
+            {
+                var tableReady = await EnsureTableExists(connection, transaction, snapshot, table, cancellationToken);
+                if (!tableReady)
+                {
+                    continue;
+                }
+
+                foreach (var instruction in table.Columns.Values)
+                {
+                    await EnsureColumnExists(connection, transaction, snapshot, table.Name, instruction, cancellationToken);
+                }
+
+                foreach (var foreignKey in table.ForeignKeys.Values)
+                {
+                    await EnsureForeignKeyCompatible(connection, transaction, snapshot, table.Name, foreignKey, cancellationToken);
+                }
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _logger.LogError(ex, "Failed to synchronize schema before migrations.");
+            throw;
+        }
+    }
+
     private async Task ExecuteSqlBatchAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
@@ -286,51 +377,205 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
         }
     }
 
-    private async Task EnsureSchemaFromScriptAsync(
+    private async Task<DatabaseSchemaSnapshot> LoadSchemaSnapshotAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
-        string scriptContent,
         CancellationToken cancellationToken)
     {
-        var plan = MigrationSchemaPlan.FromScript(scriptContent);
-        if (plan.IsEmpty)
+        var tables = new Dictionary<string, TableSchema>(StringComparer.OrdinalIgnoreCase);
+
+        const string tableSql = "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE();";
+        await using (var tableCommand = new MySqlCommand(tableSql, connection, transaction)
         {
-            return;
-        }
-
-        foreach (var table in plan.Tables)
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        })
+        await using (var reader = await tableCommand.ExecuteReaderAsync(cancellationToken))
         {
-            var tableReady = await EnsureTableExists(connection, transaction, table, cancellationToken);
-
-            if (!tableReady)
+            while (await reader.ReadAsync(cancellationToken))
             {
-                continue;
-            }
-
-            foreach (var columnInstruction in table.Columns.Values)
-            {
-                await EnsureColumnExists(connection, transaction, table.Name, columnInstruction, cancellationToken);
+                var name = reader.GetString(0);
+                tables[name] = new TableSchema(name);
             }
         }
+
+        const string columnSql = @"SELECT table_name, column_name, column_type, is_nullable, column_default, extra
+FROM information_schema.columns WHERE table_schema = DATABASE();";
+        await using (var columnCommand = new MySqlCommand(columnSql, connection, transaction)
+        {
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        })
+        await using (var reader = await columnCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var tableName = reader.GetString(0);
+                if (!tables.TryGetValue(tableName, out var table))
+                {
+                    table = new TableSchema(tableName);
+                    tables[tableName] = table;
+                }
+
+                var columnName = reader.GetString(1);
+                var columnType = reader.GetString(2);
+                var isNullable = string.Equals(reader.GetString(3), "YES", StringComparison.OrdinalIgnoreCase);
+                var defaultValue = reader.IsDBNull(4) ? null : reader.GetString(4);
+                var extra = reader.IsDBNull(5) ? null : reader.GetString(5);
+
+                table.Columns[columnName] = new ColumnSchema(columnName, columnType, isNullable, defaultValue, extra);
+            }
+        }
+
+        const string fkSql = @"SELECT kcu.constraint_name, kcu.table_name, kcu.column_name, kcu.referenced_table_name,
+kcu.referenced_column_name, rc.delete_rule, rc.update_rule
+FROM information_schema.key_column_usage kcu
+INNER JOIN information_schema.referential_constraints rc
+    ON rc.constraint_name = kcu.constraint_name AND rc.constraint_schema = kcu.constraint_schema AND rc.table_name = kcu.table_name
+WHERE kcu.table_schema = DATABASE() AND kcu.referenced_table_name IS NOT NULL;";
+
+        await using (var fkCommand = new MySqlCommand(fkSql, connection, transaction)
+        {
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        })
+        await using (var reader = await fkCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var constraintName = reader.GetString(0);
+                var tableName = reader.GetString(1);
+                if (!tables.TryGetValue(tableName, out var table))
+                {
+                    table = new TableSchema(tableName);
+                    tables[tableName] = table;
+                }
+
+                var columnName = reader.GetString(2);
+                var referencedTable = reader.GetString(3);
+                var referencedColumn = reader.GetString(4);
+                var deleteRule = reader.GetString(5);
+                var updateRule = reader.GetString(6);
+
+                table.ForeignKeys[constraintName] = new ForeignKeySchema(
+                    constraintName,
+                    columnName,
+                    referencedTable,
+                    referencedColumn,
+                    deleteRule,
+                    updateRule);
+            }
+        }
+
+        return new DatabaseSchemaSnapshot(tables);
+    }
+
+    private async Task<TableSchema> LoadTableSchemaAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var table = new TableSchema(tableName);
+
+        const string columnSql = @"SELECT column_name, column_type, is_nullable, column_default, extra
+FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = @tableName;";
+
+        await using (var columnCommand = new MySqlCommand(columnSql, connection, transaction)
+        {
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        })
+        {
+            columnCommand.Parameters.AddWithValue("@tableName", tableName);
+
+            await using var reader = await columnCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var columnName = reader.GetString(0);
+                var columnType = reader.GetString(1);
+                var isNullable = string.Equals(reader.GetString(2), "YES", StringComparison.OrdinalIgnoreCase);
+                var defaultValue = reader.IsDBNull(3) ? null : reader.GetString(3);
+                var extra = reader.IsDBNull(4) ? null : reader.GetString(4);
+
+                table.Columns[columnName] = new ColumnSchema(columnName, columnType, isNullable, defaultValue, extra);
+            }
+        }
+
+        const string fkSql = @"SELECT kcu.constraint_name, kcu.column_name, kcu.referenced_table_name, kcu.referenced_column_name,
+rc.delete_rule, rc.update_rule
+FROM information_schema.key_column_usage kcu
+INNER JOIN information_schema.referential_constraints rc
+    ON rc.constraint_name = kcu.constraint_name AND rc.constraint_schema = kcu.constraint_schema AND rc.table_name = kcu.table_name
+WHERE kcu.table_schema = DATABASE() AND kcu.table_name = @tableName AND kcu.referenced_table_name IS NOT NULL;";
+
+        await using (var fkCommand = new MySqlCommand(fkSql, connection, transaction)
+        {
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        })
+        {
+            fkCommand.Parameters.AddWithValue("@tableName", tableName);
+
+            await using var reader = await fkCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var constraintName = reader.GetString(0);
+                var columnName = reader.GetString(1);
+                var referencedTable = reader.GetString(2);
+                var referencedColumn = reader.GetString(3);
+                var deleteRule = reader.GetString(4);
+                var updateRule = reader.GetString(5);
+
+                table.ForeignKeys[constraintName] = new ForeignKeySchema(
+                    constraintName,
+                    columnName,
+                    referencedTable,
+                    referencedColumn,
+                    deleteRule,
+                    updateRule);
+            }
+        }
+
+        return table;
+    }
+
+    private async Task<ColumnSchema?> LoadColumnSchemaAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"SELECT column_type, is_nullable, column_default, extra
+FROM information_schema.columns
+WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @columnName;";
+
+        await using var command = new MySqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        };
+
+        command.Parameters.AddWithValue("@tableName", tableName);
+        command.Parameters.AddWithValue("@columnName", columnName);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var columnType = reader.GetString(0);
+        var isNullable = string.Equals(reader.GetString(1), "YES", StringComparison.OrdinalIgnoreCase);
+        var defaultValue = reader.IsDBNull(2) ? null : reader.GetString(2);
+        var extra = reader.IsDBNull(3) ? null : reader.GetString(3);
+
+        return new ColumnSchema(columnName, columnType, isNullable, defaultValue, extra);
     }
 
     private async Task<bool> EnsureTableExists(
         MySqlConnection connection,
         MySqlTransaction transaction,
+        DatabaseSchemaSnapshot snapshot,
         TableEnsurePlan table,
         CancellationToken cancellationToken)
     {
-        const string sql = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = @tableName;";
-
-        await using var existsCommand = new MySqlCommand(sql, connection, transaction)
-        {
-            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
-        };
-
-        existsCommand.Parameters.AddWithValue("@tableName", table.Name);
-        var exists = Convert.ToInt64(await existsCommand.ExecuteScalarAsync(cancellationToken)) > 0;
-
-        if (exists)
+        if (snapshot.TryGetTable(table.Name, out _))
         {
             _logger.LogInformation("TABLE '{Table}' EXISTS — SKIPPED", table.Name);
             return true;
@@ -353,45 +598,186 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
         {
             await createCommand.ExecuteNonQueryAsync(cancellationToken);
             _logger.LogInformation("CREATED TABLE '{Table}'", table.Name);
-            return true;
         }
         catch (MySqlException ex) when (ex.Number == 1050)
         {
             _logger.LogWarning("MIGRATION_SKIP {Message}", ex.Message);
-            return true;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "FAILED TO CREATE TABLE '{Table}'", table.Name);
-            throw;
-        }
+
+        var refreshed = await LoadTableSchemaAsync(connection, transaction, table.Name, cancellationToken);
+        snapshot.UpsertTable(refreshed);
+        return true;
     }
 
     private async Task EnsureColumnExists(
         MySqlConnection connection,
         MySqlTransaction transaction,
+        DatabaseSchemaSnapshot snapshot,
         string tableName,
         ColumnEnsureInstruction instruction,
         CancellationToken cancellationToken)
     {
-        var metadata = await GetColumnMetadataAsync(connection, transaction, tableName, instruction.Column.Name, cancellationToken);
+        if (!snapshot.TryGetTable(tableName, out var tableSchema))
+        {
+            tableSchema = await LoadTableSchemaAsync(connection, transaction, tableName, cancellationToken);
+            snapshot.UpsertTable(tableSchema);
+        }
 
-        if (!metadata.Exists)
+        if (!tableSchema.Columns.TryGetValue(instruction.Column.Name, out var existing))
         {
             await AddColumnAsync(connection, transaction, tableName, instruction, cancellationToken);
+            var refreshed = await LoadColumnSchemaAsync(connection, transaction, tableName, instruction.Column.Name, cancellationToken);
+            if (refreshed is not null)
+            {
+                snapshot.UpsertColumn(tableName, refreshed);
+            }
             return;
         }
 
-        if (IsColumnCompatible(metadata, instruction))
+        if (IsColumnCompatible(existing, instruction))
         {
             var skipMessage = instruction.Mode == ColumnEnsureMode.EnsureMatches
-                ? "COLUMN '{Column}' EXISTS — TYPE OK — SKIPPED"
+                ? "COLUMN '{Column}' EXISTS — TYPE OK"
                 : "COLUMN '{Column}' EXISTS — SKIPPED";
             _logger.LogInformation(skipMessage, instruction.Column.Name);
             return;
         }
 
-        await ModifyColumnAsync(connection, transaction, tableName, instruction, cancellationToken);
+        await EnsureColumnTypeCompatible(connection, transaction, snapshot, tableName, instruction, existing, cancellationToken);
+    }
+
+    private async Task EnsureColumnTypeCompatible(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        DatabaseSchemaSnapshot snapshot,
+        string tableName,
+        ColumnEnsureInstruction instruction,
+        ColumnSchema existing,
+        CancellationToken cancellationToken)
+    {
+        if (_options.StrictMode)
+        {
+            var message = $"STRICT_MODE: Column '{tableName}.{instruction.Column.Name}' type mismatch. Expected '{instruction.Column.DefinitionWithoutName}', actual '{existing.ColumnType}'.";
+            _logger.LogError(message);
+            throw new InvalidOperationException(message);
+        }
+
+        _logger.LogWarning("COLUMN '{Column}' TYPE mismatch — FIXING", instruction.Column.Name);
+
+        await AlterColumnAsync(connection, transaction, tableName, instruction.Column.Name, instruction.Column.DefinitionWithoutName, cancellationToken);
+
+        var refreshed = await LoadColumnSchemaAsync(connection, transaction, tableName, instruction.Column.Name, cancellationToken);
+        if (refreshed is not null)
+        {
+            snapshot.UpsertColumn(tableName, refreshed);
+        }
+    }
+
+    private async Task EnsureForeignKeyCompatible(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        DatabaseSchemaSnapshot snapshot,
+        string tableName,
+        ForeignKeyEnsureInstruction instruction,
+        CancellationToken cancellationToken)
+    {
+        if (!snapshot.TryGetTable(tableName, out var tableSchema))
+        {
+            tableSchema = await LoadTableSchemaAsync(connection, transaction, tableName, cancellationToken);
+            snapshot.UpsertTable(tableSchema);
+        }
+
+        if (TryFindForeignKey(tableSchema, instruction, out var existing))
+        {
+            _logger.LogInformation("FOREIGN KEY '{ForeignKey}' EXISTS — SKIPPED", existing!.ConstraintName);
+            return;
+        }
+
+        if (!tableSchema.Columns.TryGetValue(instruction.ColumnName, out var column))
+        {
+            _logger.LogWarning(
+                "COLUMN '{Column}' missing while ensuring foreign key '{ForeignKey}'.",
+                instruction.ColumnName,
+                instruction.ConstraintName ?? instruction.ColumnName);
+            return;
+        }
+
+        if (!snapshot.TryGetTable(instruction.ReferencedTable, out var referencedTable))
+        {
+            referencedTable = await LoadTableSchemaAsync(connection, transaction, instruction.ReferencedTable, cancellationToken);
+            snapshot.UpsertTable(referencedTable);
+        }
+
+        if (!referencedTable.Columns.TryGetValue(instruction.ReferencedColumn, out var referencedColumn))
+        {
+            _logger.LogWarning(
+                "FOREIGN KEY '{ForeignKey}' reference '{ReferencedTable}.{ReferencedColumn}' not found.",
+                instruction.ConstraintName ?? instruction.ColumnName,
+                instruction.ReferencedTable,
+                instruction.ReferencedColumn);
+            return;
+        }
+
+        if (!AreColumnTypesCompatible(column, referencedColumn))
+        {
+            if (_options.StrictMode)
+            {
+                var message = $"STRICT_MODE: Column '{tableName}.{instruction.ColumnName}' is incompatible with '{instruction.ReferencedTable}.{instruction.ReferencedColumn}'.";
+                _logger.LogError(message);
+                throw new InvalidOperationException(message);
+            }
+
+            _logger.LogWarning("COLUMN '{Column}' TYPE mismatch — FIXING", instruction.ColumnName);
+
+            var adjusted = column with { ColumnType = referencedColumn.ColumnType };
+            var definition = BuildColumnDefinition(adjusted);
+
+            await AlterColumnAsync(connection, transaction, tableName, instruction.ColumnName, definition, cancellationToken);
+
+            var refreshedColumn = await LoadColumnSchemaAsync(connection, transaction, tableName, instruction.ColumnName, cancellationToken);
+            if (refreshedColumn is not null)
+            {
+                snapshot.UpsertColumn(tableName, refreshedColumn);
+                column = refreshedColumn;
+            }
+        }
+
+        var constraintName = instruction.ConstraintName ?? $"FK_{tableName}_{instruction.ColumnName}_{instruction.ReferencedTable}";
+        var sqlBuilder = new StringBuilder();
+        sqlBuilder.Append($"ALTER TABLE `{tableName}` ADD CONSTRAINT `{constraintName}` FOREIGN KEY (`{instruction.ColumnName}`) REFERENCES `{instruction.ReferencedTable}` (`{instruction.ReferencedColumn}`)");
+        if (!string.IsNullOrWhiteSpace(instruction.OnDelete))
+        {
+            sqlBuilder.Append(' ').Append("ON DELETE ").Append(instruction.OnDelete);
+        }
+
+        if (!string.IsNullOrWhiteSpace(instruction.OnUpdate))
+        {
+            sqlBuilder.Append(' ').Append("ON UPDATE ").Append(instruction.OnUpdate);
+        }
+
+        sqlBuilder.Append(';');
+
+        await using var command = new MySqlCommand(sqlBuilder.ToString(), connection, transaction)
+        {
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        };
+
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            _logger.LogInformation("FOREIGN KEY '{ForeignKey}' recreated with compatible type", constraintName);
+
+            var refreshedTable = await LoadTableSchemaAsync(connection, transaction, tableName, cancellationToken);
+            snapshot.UpsertTable(refreshedTable);
+        }
+        catch (MySqlException ex) when (ex.Number == 1061)
+        {
+            _logger.LogWarning("MIGRATION_SKIP {Message}", ex.Message);
+        }
+        catch (MySqlException ex) when (ex.Number == 3780)
+        {
+            _logger.LogWarning("MIGRATION_FIX {Message}", ex.Message);
+        }
     }
 
     private async Task AddColumnAsync(
@@ -429,75 +815,171 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
         }
     }
 
-    private async Task ModifyColumnAsync(
+    private async Task AlterColumnAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
         string tableName,
-        ColumnEnsureInstruction instruction,
+        string columnName,
+        string definitionWithoutName,
         CancellationToken cancellationToken)
     {
-        var modifySql = $"ALTER TABLE `{tableName}` MODIFY COLUMN `{instruction.Column.Name}` {instruction.Column.DefinitionWithoutName};";
+        var sql = $"ALTER TABLE `{tableName}` MODIFY COLUMN `{columnName}` {definitionWithoutName};";
 
-        _logger.LogInformation(
-            "COLUMN '{Column}' EXISTS — TYPE MISMATCH — ALTERING TO ({Definition})",
-            instruction.Column.Name,
-            instruction.Column.DefinitionWithoutName);
-
-        await using var modifyCommand = new MySqlCommand(modifySql, connection, transaction)
+        await using var command = new MySqlCommand(sql, connection, transaction)
         {
             CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
         };
 
         try
         {
-            await modifyCommand.ExecuteNonQueryAsync(cancellationToken);
-            _logger.LogInformation("ALTERED COLUMN '{Column}'", instruction.Column.Name);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            _logger.LogInformation("ALTERED COLUMN '{Column}'", columnName);
         }
         catch (MySqlException ex) when (ex.Number == 1060)
         {
             _logger.LogWarning("MIGRATION_SKIP {Message}", ex.Message);
         }
-    }
-
-    private async Task<ColumnMetadata> GetColumnMetadataAsync(
-        MySqlConnection connection,
-        MySqlTransaction transaction,
-        string tableName,
-        string columnName,
-        CancellationToken cancellationToken)
-    {
-        const string lookupSql = @"SELECT COLUMN_TYPE, EXTRA FROM information_schema.columns
-WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @columnName;";
-
-        await using var lookupCommand = new MySqlCommand(lookupSql, connection, transaction)
+        catch (MySqlException ex) when (ex.Number == 3780)
         {
-            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
-        };
-
-        lookupCommand.Parameters.AddWithValue("@tableName", tableName);
-        lookupCommand.Parameters.AddWithValue("@columnName", columnName);
-
-        await using var reader = await lookupCommand.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return ColumnMetadata.Missing;
+            _logger.LogWarning("MIGRATION_FIX {Message}", ex.Message);
         }
-
-        var columnType = reader.GetString(0);
-        var extra = reader.IsDBNull(1) ? null : reader.GetString(1);
-
-        return new ColumnMetadata(columnType, extra);
     }
 
-    private static bool IsColumnCompatible(ColumnMetadata metadata, ColumnEnsureInstruction instruction)
+    private static bool IsColumnCompatible(ColumnSchema column, ColumnEnsureInstruction instruction)
     {
-        var matchesType = metadata.ColumnType.StartsWith(instruction.Column.ExpectedType, StringComparison.OrdinalIgnoreCase);
+        var matchesType = column.ColumnType.StartsWith(instruction.Column.ExpectedType, StringComparison.OrdinalIgnoreCase);
         var requiresAutoIncrement = instruction.Column.IsAutoIncrement;
-        var hasAutoIncrement = !string.IsNullOrWhiteSpace(metadata.Extra)
-            && metadata.Extra.Contains("auto_increment", StringComparison.OrdinalIgnoreCase);
+        var hasAutoIncrement = !string.IsNullOrWhiteSpace(column.Extra)
+            && column.Extra.Contains("auto_increment", StringComparison.OrdinalIgnoreCase);
 
         return matchesType && (!requiresAutoIncrement || hasAutoIncrement);
     }
+
+    private static bool AreColumnTypesCompatible(ColumnSchema left, ColumnSchema right)
+    {
+        return string.Equals(left.ColumnType, right.ColumnType, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildColumnDefinition(ColumnSchema column)
+    {
+        var builder = new StringBuilder(column.ColumnType);
+        builder.Append(column.IsNullable ? " NULL" : " NOT NULL");
+
+        if (column.DefaultValue is not null)
+        {
+            var formatted = FormatDefaultValue(column.DefaultValue);
+            if (!string.IsNullOrEmpty(formatted))
+            {
+                builder.Append(" DEFAULT ").Append(formatted);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(column.Extra))
+        {
+            builder.Append(' ').Append(column.Extra);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string? FormatDefaultValue(string? defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(defaultValue))
+        {
+            return defaultValue;
+        }
+
+        if (string.Equals(defaultValue, "CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(defaultValue, "CURRENT_TIMESTAMP()", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(defaultValue, "NOW()", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(defaultValue, "NULL", StringComparison.OrdinalIgnoreCase))
+        {
+            return defaultValue;
+        }
+
+        if (defaultValue.StartsWith("'", StringComparison.Ordinal) && defaultValue.EndsWith("'", StringComparison.Ordinal))
+        {
+            return defaultValue;
+        }
+
+        return $"'{defaultValue.Replace("'", "''", StringComparison.Ordinal)}'";
+    }
+
+    private static bool TryFindForeignKey(
+        TableSchema table,
+        ForeignKeyEnsureInstruction instruction,
+        out ForeignKeySchema? existing)
+    {
+        if (!string.IsNullOrWhiteSpace(instruction.ConstraintName)
+            && table.ForeignKeys.TryGetValue(instruction.ConstraintName, out existing))
+        {
+            return true;
+        }
+
+        existing = table.ForeignKeys.Values.FirstOrDefault(fk =>
+            string.Equals(fk.ColumnName, instruction.ColumnName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(fk.ReferencedTable, instruction.ReferencedTable, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(fk.ReferencedColumn, instruction.ReferencedColumn, StringComparison.OrdinalIgnoreCase));
+
+        return existing is not null;
+    }
+
+    private sealed class DatabaseSchemaSnapshot
+    {
+        private readonly Dictionary<string, TableSchema> _tables;
+
+        public DatabaseSchemaSnapshot(Dictionary<string, TableSchema> tables)
+        {
+            _tables = tables;
+        }
+
+        public bool TryGetTable(string tableName, out TableSchema table)
+        {
+            return _tables.TryGetValue(tableName, out table);
+        }
+
+        public void UpsertTable(TableSchema table)
+        {
+            _tables[table.Name] = table;
+        }
+
+        public void UpsertColumn(string tableName, ColumnSchema column)
+        {
+            if (!_tables.TryGetValue(tableName, out var table))
+            {
+                table = new TableSchema(tableName);
+                _tables[tableName] = table;
+            }
+
+            table.Columns[column.Name] = column;
+        }
+    }
+
+    private sealed class TableSchema
+    {
+        public TableSchema(string name)
+        {
+            Name = name;
+            Columns = new Dictionary<string, ColumnSchema>(StringComparer.OrdinalIgnoreCase);
+            ForeignKeys = new Dictionary<string, ForeignKeySchema>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        public string Name { get; }
+
+        public Dictionary<string, ColumnSchema> Columns { get; }
+
+        public Dictionary<string, ForeignKeySchema> ForeignKeys { get; }
+    }
+
+    private sealed record ColumnSchema(string Name, string ColumnType, bool IsNullable, string? DefaultValue, string? Extra);
+
+    private sealed record ForeignKeySchema(
+        string ConstraintName,
+        string ColumnName,
+        string ReferencedTable,
+        string ReferencedColumn,
+        string DeleteRule,
+        string UpdateRule);
 
     private sealed record MigrationSchemaPlan(IReadOnlyCollection<TableEnsurePlan> Tables)
     {
@@ -519,19 +1001,11 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
 
                     if (tables.TryGetValue(plan.Name, out var existing))
                     {
-                        foreach (var pair in plan.Columns)
-                        {
-                            existing.Columns[pair.Key] = pair.Value;
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(plan.CreateStatement))
-                        {
-                            tables[plan.Name] = existing with { CreateStatement = plan.CreateStatement };
-                        }
+                        tables[plan.Name] = existing.Merge(plan);
                     }
                     else
                     {
-                        tables[plan.Name] = plan;
+                        tables[plan.Name] = plan.Clone();
                     }
                 }
                 else if (statement.StartsWith("ALTER TABLE", StringComparison.OrdinalIgnoreCase))
@@ -547,8 +1021,39 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
     private sealed record TableEnsurePlan(
         string Name,
         string? CreateStatement,
-        IDictionary<string, ColumnEnsureInstruction> Columns)
+        IDictionary<string, ColumnEnsureInstruction> Columns,
+        IDictionary<string, ForeignKeyEnsureInstruction> ForeignKeys)
     {
+        public TableEnsurePlan Clone()
+        {
+            return new TableEnsurePlan(
+                Name,
+                CreateStatement,
+                new Dictionary<string, ColumnEnsureInstruction>(Columns, StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, ForeignKeyEnsureInstruction>(ForeignKeys, StringComparer.OrdinalIgnoreCase));
+        }
+
+        public TableEnsurePlan Merge(TableEnsurePlan other)
+        {
+            var columns = new Dictionary<string, ColumnEnsureInstruction>(Columns, StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in other.Columns)
+            {
+                columns[pair.Key] = pair.Value;
+            }
+
+            var foreignKeys = new Dictionary<string, ForeignKeyEnsureInstruction>(ForeignKeys, StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in other.ForeignKeys)
+            {
+                foreignKeys[pair.Key] = pair.Value;
+            }
+
+            var createStatement = !string.IsNullOrWhiteSpace(other.CreateStatement)
+                ? other.CreateStatement
+                : CreateStatement;
+
+            return new TableEnsurePlan(Name, createStatement, columns, foreignKeys);
+        }
+
         public static TableEnsurePlan? FromCreateTable(string statement)
         {
             var match = Regex.Match(
@@ -564,9 +1069,17 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
             var tableName = UnwrapIdentifier(match.Groups["name"].Value);
             var body = match.Groups["body"].Value;
             var columns = new Dictionary<string, ColumnEnsureInstruction>(StringComparer.OrdinalIgnoreCase);
+            var foreignKeys = new Dictionary<string, ForeignKeyEnsureInstruction>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var definition in SplitDefinitionElements(body))
             {
+                var foreignKey = ForeignKeyDefinitionParser.Parse(definition);
+                if (foreignKey is not null)
+                {
+                    foreignKeys[foreignKey.Key] = foreignKey;
+                    continue;
+                }
+
                 var column = ColumnDefinitionParser.Parse(definition);
                 if (column is null)
                 {
@@ -576,7 +1089,7 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
                 columns[column.Name] = new ColumnEnsureInstruction(column, ColumnEnsureMode.EnsureExists);
             }
 
-            return new TableEnsurePlan(tableName, statement, columns);
+            return new TableEnsurePlan(tableName, statement, columns, foreignKeys);
         }
 
         public static void ApplyAlterStatement(string statement, IDictionary<string, TableEnsurePlan> tables)
@@ -597,13 +1110,22 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
                 table = new TableEnsurePlan(
                     tableName,
                     null,
-                    new Dictionary<string, ColumnEnsureInstruction>(StringComparer.OrdinalIgnoreCase));
+                    new Dictionary<string, ColumnEnsureInstruction>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<string, ForeignKeyEnsureInstruction>(StringComparer.OrdinalIgnoreCase));
                 tables[tableName] = table;
             }
 
             foreach (var clause in SplitDefinitionElements(match.Groups["clauses"].Value))
             {
                 var trimmed = clause.Trim();
+
+                var foreignKey = ForeignKeyDefinitionParser.Parse(trimmed);
+                if (foreignKey is not null)
+                {
+                    table.ForeignKeys[foreignKey.Key] = foreignKey;
+                    continue;
+                }
+
                 if (trimmed.StartsWith("ADD COLUMN", StringComparison.OrdinalIgnoreCase))
                 {
                     var definition = trimmed["ADD COLUMN".Length..].Trim();
@@ -633,18 +1155,22 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
 
     private sealed record ColumnEnsureInstruction(ColumnDefinition Column, ColumnEnsureMode Mode);
 
+    private sealed record ForeignKeyEnsureInstruction(
+        string? ConstraintName,
+        string ColumnName,
+        string ReferencedTable,
+        string ReferencedColumn,
+        string? OnDelete,
+        string? OnUpdate)
+    {
+        public string Key => ConstraintName ?? $"{ColumnName}->{ReferencedTable}.{ReferencedColumn}";
+    }
+
     private sealed record ColumnDefinition(
         string Name,
         string DefinitionWithoutName,
         string ExpectedType,
         bool IsAutoIncrement);
-
-    private sealed record ColumnMetadata(string ColumnType, string? Extra)
-    {
-        public bool Exists => !string.IsNullOrEmpty(ColumnType);
-
-        public static ColumnMetadata Missing { get; } = new(string.Empty, null);
-    }
 
     private enum ColumnEnsureMode
     {
@@ -764,6 +1290,95 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
                 || definition.StartsWith("KEY", StringComparison.OrdinalIgnoreCase)
                 || definition.StartsWith("INDEX", StringComparison.OrdinalIgnoreCase)
                 || definition.StartsWith("FOREIGN KEY", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static class ForeignKeyDefinitionParser
+    {
+        private static readonly Regex ForeignKeyRegex = new(
+            @"^(ADD\s+)?(CONSTRAINT\s+`?(?<constraint>[\w]+)`?\s+)?FOREIGN\s+KEY\s*(?:`?(?<name>[\w]+)`?\s*)?\((?<column>[^)]+)\)\s+REFERENCES\s+`?(?<refTable>[\w]+)`?\s*\((?<refColumn>[^)]+)\)(?<tail>.*)$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        private static readonly Regex RuleRegex = new(
+            @"ON\s+(?<type>DELETE|UPDATE)\s+(?<rule>CASCADE|RESTRICT|SET\s+NULL|SET\s+DEFAULT|NO\s+ACTION)",
+            RegexOptions.IgnoreCase);
+
+        public static ForeignKeyEnsureInstruction? Parse(string definition)
+        {
+            if (string.IsNullOrWhiteSpace(definition))
+            {
+                return null;
+            }
+
+            var trimmed = definition.Trim().TrimEnd(',');
+            if (!trimmed.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var match = ForeignKeyRegex.Match(trimmed);
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            var columns = match.Groups["column"].Value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var referencedColumns = match.Groups["refColumn"].Value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+            if (columns.Length != 1 || referencedColumns.Length != 1)
+            {
+                return null;
+            }
+
+            var constraintName = match.Groups["constraint"].Success
+                ? UnwrapIdentifier(match.Groups["constraint"].Value)
+                : null;
+
+            if (string.IsNullOrWhiteSpace(constraintName) && match.Groups["name"].Success)
+            {
+                constraintName = UnwrapIdentifier(match.Groups["name"].Value);
+            }
+
+            var columnName = UnwrapIdentifier(columns[0]);
+            var referencedTable = UnwrapIdentifier(match.Groups["refTable"].Value);
+            var referencedColumn = UnwrapIdentifier(referencedColumns[0]);
+
+            string? onDelete = null;
+            string? onUpdate = null;
+
+            foreach (Match ruleMatch in RuleRegex.Matches(match.Groups["tail"].Value))
+            {
+                var rule = NormalizeRule(ruleMatch.Groups["rule"].Value);
+                if (string.Equals(ruleMatch.Groups["type"].Value, "DELETE", StringComparison.OrdinalIgnoreCase))
+                {
+                    onDelete = rule;
+                }
+                else if (string.Equals(ruleMatch.Groups["type"].Value, "UPDATE", StringComparison.OrdinalIgnoreCase))
+                {
+                    onUpdate = rule;
+                }
+            }
+
+            return new ForeignKeyEnsureInstruction(
+                string.IsNullOrWhiteSpace(constraintName) ? null : constraintName,
+                columnName,
+                referencedTable,
+                referencedColumn,
+                onDelete,
+                onUpdate);
+        }
+
+        private static string NormalizeRule(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            var normalized = Regex.Replace(value.Trim(), "\\s+", " ");
+            return normalized.ToUpperInvariant();
         }
     }
 
