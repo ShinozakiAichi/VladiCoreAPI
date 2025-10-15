@@ -13,6 +13,7 @@ using VladiCore.Api.Controllers;
 using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Api.Services;
 using VladiCore.Data.Contexts;
+using VladiCore.Data.Identity;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
 

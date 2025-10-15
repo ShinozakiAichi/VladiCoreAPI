@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Api.Services;
 using VladiCore.Data.Contexts;
+using VladiCore.Data.Identity;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
 
@@ -140,7 +141,6 @@ public class AuthController : ControllerBase
         }
 
         var token = await _dbContext.RefreshTokens
-            .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.Id == request.RefreshToken, cancellationToken)
             .ConfigureAwait(false);
 
@@ -153,7 +153,8 @@ public class AuthController : ControllerBase
             });
         }
 
-        if (token.User == null || token.User.IsBlocked)
+        var user = await _userManager.FindByIdAsync(token.UserId.ToString());
+        if (user == null || user.IsBlocked)
         {
             return Forbid();
         }
@@ -161,7 +162,7 @@ public class AuthController : ControllerBase
         token.RevokedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        var response = await IssueTokensAsync(token.User, cancellationToken).ConfigureAwait(false);
+        var response = await IssueTokensAsync(user, cancellationToken).ConfigureAwait(false);
         return Ok(response);
     }
 

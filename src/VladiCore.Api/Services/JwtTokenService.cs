@@ -6,7 +6,7 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using VladiCore.Api.Infrastructure.Options;
-using VladiCore.Domain.Entities;
+using VladiCore.Data.Identity;
 
 namespace VladiCore.Api.Services;
 

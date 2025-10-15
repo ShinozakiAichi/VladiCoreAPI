@@ -8,8 +8,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VladiCore.Data.Contexts;
+using VladiCore.Data.Identity;
 using VladiCore.Domain.DTOs;
-using VladiCore.Domain.Entities;
 
 namespace VladiCore.Api.Controllers;
 

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using VladiCore.Domain.Entities;
+using VladiCore.Data.Identity;
 
 namespace VladiCore.Api.Controllers;
 

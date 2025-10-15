@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
+using VladiCore.Data.Identity;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
 using VladiCore.Domain.Services;
@@ -51,21 +52,26 @@ public class ReviewModerationController : BaseApiController
             });
         }
 
-        var query = DbContext.ProductReviews
+        var baseQuery = DbContext.ProductReviews
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(r => !r.IsDeleted && r.Status == parsedStatus)
-            .Include(r => r.User)
-            .OrderBy(r => r.CreatedAt);
+            .Where(r => !r.IsDeleted && r.Status == parsedStatus);
 
-        var total = await query.CountAsync(cancellationToken).ConfigureAwait(false);
-        var items = await query
+        var total = await baseQuery.CountAsync(cancellationToken).ConfigureAwait(false);
+        var items = await baseQuery
+            .OrderBy(r => r.CreatedAt)
             .Skip(skip)
             .Take(take)
+            .GroupJoin(
+                DbContext.Users.AsNoTracking(),
+                review => review.UserId,
+                user => user.Id,
+                (review, users) => new { review, users })
+            .SelectMany(x => x.users.DefaultIfEmpty(), (x, user) => new { x.review, user })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var dtos = items.Select(ReviewsController.ToDto).ToList();
+        var dtos = items.Select(item => ReviewsController.ToDto(item.review, item.user)).ToList();
         return Ok(new PagedResult<ReviewDto>
         {
             Items = dtos,
@@ -82,7 +88,6 @@ public class ReviewModerationController : BaseApiController
     {
         var review = await DbContext.ProductReviews
             .IgnoreQueryFilters()
-            .Include(r => r.User)
             .FirstOrDefaultAsync(r => r.Id == reviewId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -102,7 +107,12 @@ public class ReviewModerationController : BaseApiController
         Cache.RemoveByPrefix($"products:{review.ProductId}");
         Cache.RemoveByPrefix("products:list");
 
-        return Ok(ReviewsController.ToDto(review));
+        var user = await DbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == review.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Ok(ReviewsController.ToDto(review, user));
     }
 
     [HttpPost("{reviewId:long}/reject")]
@@ -118,7 +128,6 @@ public class ReviewModerationController : BaseApiController
 
         var review = await DbContext.ProductReviews
             .IgnoreQueryFilters()
-            .Include(r => r.User)
             .FirstOrDefaultAsync(r => r.Id == reviewId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -145,6 +154,11 @@ public class ReviewModerationController : BaseApiController
         Cache.RemoveByPrefix($"products:{review.ProductId}");
         Cache.RemoveByPrefix("products:list");
 
-        return Ok(ReviewsController.ToDto(review));
+        var user = await DbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == review.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Ok(ReviewsController.ToDto(review, user));
     }
 }
