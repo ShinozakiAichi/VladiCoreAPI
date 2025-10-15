@@ -19,6 +19,8 @@ public class Product
 
     public string? Specs { get; set; }
 
+    public string? Attributes { get; set; }
+
     public string? Description { get; set; }
 
     public decimal AverageRating { get; set; }
