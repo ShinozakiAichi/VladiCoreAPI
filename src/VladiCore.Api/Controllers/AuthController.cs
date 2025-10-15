@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -168,8 +169,9 @@ public class AuthController : ControllerBase
 
     private async Task<AuthResponse> IssueTokensAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
-        var roles = await _userManager.GetRolesAsync(user);
-        var (accessToken, accessExpires) = _tokenService.CreateAccessToken(user, roles);
+        var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
+        var readOnlyRoles = roles as IReadOnlyCollection<string> ?? roles.ToList().AsReadOnly();
+        var (accessToken, accessExpires) = _tokenService.CreateAccessToken(user, readOnlyRoles);
         var refreshToken = new RefreshToken
         {
             Id = Guid.NewGuid(),

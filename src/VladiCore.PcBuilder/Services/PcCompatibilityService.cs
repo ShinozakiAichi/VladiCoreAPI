@@ -51,7 +51,7 @@ namespace VladiCore.PcBuilder.Services
             return response;
         }
 
-        private static void ValidateSockets(Cpu cpu, Motherboard motherboard, PcValidateResponse response)
+        private static void ValidateSockets(Cpu? cpu, Motherboard? motherboard, PcValidateResponse response)
         {
             if (cpu == null || motherboard == null)
             {
@@ -69,7 +69,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static void ValidateRam(Ram ram, Motherboard motherboard, PcValidateResponse response)
+        private static void ValidateRam(Ram? ram, Motherboard? motherboard, PcValidateResponse response)
         {
             if (ram == null || motherboard == null)
             {
@@ -97,7 +97,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static void ValidateGpu(Gpu gpu, Domain.Entities.Case pcCase, PcValidateResponse response)
+        private static void ValidateGpu(Gpu? gpu, Domain.Entities.Case? pcCase, PcValidateResponse response)
         {
             if (gpu == null || pcCase == null)
             {
@@ -115,7 +115,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static void ValidateCooler(Cooler cooler, Cpu cpu, Domain.Entities.Case pcCase, PcValidateResponse response)
+        private static void ValidateCooler(Cooler? cooler, Cpu? cpu, Domain.Entities.Case? pcCase, PcValidateResponse response)
         {
             if (cooler == null)
             {
@@ -143,7 +143,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static void ValidatePower(Cpu cpu, Gpu gpu, Psu psu, PcValidateResponse response)
+        private static void ValidatePower(Cpu? cpu, Gpu? gpu, Psu? psu, PcValidateResponse response)
         {
             if (psu == null)
             {
@@ -165,7 +165,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static void ValidateFormFactor(Psu psu, Domain.Entities.Case pcCase, PcValidateResponse response)
+        private static void ValidateFormFactor(Psu? psu, Domain.Entities.Case? pcCase, PcValidateResponse response)
         {
             if (psu == null || pcCase == null)
             {
@@ -183,7 +183,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static void ValidateSlots(IEnumerable<Storage> storages, Motherboard motherboard, Gpu gpu, PcValidateResponse response)
+        private static void ValidateSlots(IEnumerable<Storage> storages, Motherboard? motherboard, Gpu? gpu, PcValidateResponse response)
         {
             if (motherboard == null)
             {
@@ -212,7 +212,7 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static bool IsSocketSupported(string? socketSupportJson, string socket)
+        private static bool IsSocketSupported(string? socketSupportJson, string? socket)
         {
             if (string.IsNullOrWhiteSpace(socketSupportJson) || string.IsNullOrWhiteSpace(socket))
             {
