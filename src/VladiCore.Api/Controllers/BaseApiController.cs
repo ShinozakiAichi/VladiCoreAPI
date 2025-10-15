@@ -37,7 +37,7 @@ public abstract class BaseApiController : ControllerBase
         }
     }
 
-    protected IActionResult CachedOk(object value, string etag, TimeSpan ttl)
+    protected ActionResult CachedOk(object value, string etag, TimeSpan ttl)
     {
         var headers = Response.GetTypedHeaders();
         headers.CacheControl = new CacheControlHeaderValue
