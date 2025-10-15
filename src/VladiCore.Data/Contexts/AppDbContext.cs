@@ -1,10 +1,13 @@
 using System;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VladiCore.Domain.Entities;
 
 namespace VladiCore.Data.Contexts;
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
     public AppDbContext(DbContextOptions<AppDbContext> options)
         : base(options)
@@ -17,6 +20,8 @@ public class AppDbContext : DbContext
 
     public DbSet<ProductPriceHistory> ProductPriceHistory => Set<ProductPriceHistory>();
 
+    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+
     public DbSet<Order> Orders => Set<Order>();
 
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
@@ -25,7 +30,11 @@ public class AppDbContext : DbContext
 
     public DbSet<ProductReview> ProductReviews => Set<ProductReview>();
 
-    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<ProductReviewVote> ProductReviewVotes => Set<ProductReviewVote>();
+
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<CoPurchase> CoPurchases => Set<CoPurchase>();
 
     public DbSet<Cpu> Cpus => Set<Cpu>();
 
@@ -58,8 +67,12 @@ public class AppDbContext : DbContext
             .HasColumnType("decimal(12,2)");
 
         modelBuilder.Entity<Product>()
-            .Property(p => p.OldPrice)
-            .HasColumnType("decimal(12,2)");
+            .Property(p => p.AverageRating)
+            .HasColumnType("decimal(3,2)");
+
+        modelBuilder.Entity<Product>()
+            .Property(p => p.Specs)
+            .HasColumnType("json");
 
         modelBuilder.Entity<ProductPriceHistory>()
             .Property(h => h.Price)
@@ -69,15 +82,13 @@ public class AppDbContext : DbContext
             .Property(i => i.UnitPrice)
             .HasColumnType("decimal(12,2)");
 
-        var jsonOptions = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
-
         modelBuilder.Entity<ProductReview>()
             .Property(r => r.Photos)
             .HasConversion(
-                photos => System.Text.Json.JsonSerializer.Serialize(photos, jsonOptions),
+                photos => System.Text.Json.JsonSerializer.Serialize(photos, SystemTextJsonOptions),
                 json => string.IsNullOrWhiteSpace(json)
                     ? Array.Empty<string>()
-                    : System.Text.Json.JsonSerializer.Deserialize<string[]>(json, jsonOptions) ?? Array.Empty<string>())
+                    : System.Text.Json.JsonSerializer.Deserialize<string[]>(json, SystemTextJsonOptions) ?? Array.Empty<string>())
             .HasColumnType("json");
 
         modelBuilder.Entity<ProductReview>()
@@ -85,11 +96,60 @@ public class AppDbContext : DbContext
             .HasColumnType("tinyint unsigned");
 
         modelBuilder.Entity<ProductReview>()
-            .HasIndex(r => new { r.ProductId, r.IsApproved, r.CreatedAt })
-            .HasDatabaseName("IX_ProductReviews_Product_IsApproved_CreatedAt");
+            .Property(r => r.Status)
+            .HasConversion(new EnumToStringConverter<ReviewStatus>())
+            .HasMaxLength(32)
+            .HasColumnType("varchar(32)");
+
+        modelBuilder.Entity<ProductReview>()
+            .HasIndex(r => new { r.ProductId, r.Status, r.CreatedAt })
+            .HasDatabaseName("IX_ProductReviews_Product_Status_CreatedAt");
+
+        modelBuilder.Entity<ProductReview>()
+            .HasIndex(r => new { r.ProductId, r.Rating })
+            .HasDatabaseName("IX_ProductReviews_Product_Rating");
+
+        modelBuilder.Entity<ProductReview>()
+            .HasIndex(r => new { r.UserId, r.ProductId })
+            .HasDatabaseName("IX_ProductReviews_User_Product");
+
+        modelBuilder.Entity<ProductReview>()
+            .HasQueryFilter(r => !r.IsDeleted);
+
+        modelBuilder.Entity<ProductReviewVote>()
+            .HasKey(v => new { v.ReviewId, v.UserId });
+
+        modelBuilder.Entity<ProductReviewVote>()
+            .Property(v => v.Value)
+            .HasColumnType("tinyint");
+
+        modelBuilder.Entity<ProductReviewVote>()
+            .HasOne(v => v.Review)
+            .WithMany(r => r.Votes)
+            .HasForeignKey(v => v.ReviewId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ProductImage>()
-            .HasIndex(i => new { i.ProductId, i.CreatedAt })
-            .HasDatabaseName("IX_ProductImages_Product_CreatedAt");
+            .HasIndex(i => new { i.ProductId, i.SortOrder })
+            .HasDatabaseName("IX_ProductImages_Product_SortOrder");
+
+        modelBuilder.Entity<ProductImage>()
+            .Property(i => i.SortOrder)
+            .HasDefaultValue(0);
+
+        modelBuilder.Entity<Product>()
+            .HasIndex(p => new { p.CategoryId, p.Price })
+            .HasDatabaseName("IX_Product_Category_Price");
+
+        modelBuilder.Entity<Product>()
+            .HasIndex(p => p.Name)
+            .HasDatabaseName("IX_Product_Name");
+
+        modelBuilder.Entity<CoPurchase>()
+            .HasIndex(c => new { c.ProductId, c.WithProductId })
+            .IsUnique();
     }
+
+    private static readonly System.Text.Json.JsonSerializerOptions SystemTextJsonOptions =
+        new(System.Text.Json.JsonSerializerDefaults.Web);
 }

@@ -14,6 +14,7 @@ using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Data.Contexts;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
+using VladiCore.Domain.Services;
 using VladiCore.PcBuilder.Services;
 using VladiCore.Recommendations.Services;
 
@@ -23,7 +24,7 @@ namespace VladiCore.Tests.Controllers;
 public class PublicEndpointsTests
 {
     [Test]
-    public void GetProducts_ShouldReturnOk()
+    public async Task GetProducts_ShouldReturnOk()
     {
         using var context = CreateContext();
         context.Products.Add(new Product
@@ -33,7 +34,9 @@ public class PublicEndpointsTests
             Name = "Test Product",
             CategoryId = 1,
             Price = 10,
-            CreatedAt = DateTime.UtcNow
+            Stock = 5,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         });
         context.SaveChanges();
 
@@ -45,9 +48,9 @@ public class PublicEndpointsTests
             new StubRecommendationService());
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
 
-        var result = controller.GetProducts();
+        var actionResult = await controller.GetProducts();
 
-        result.Should().BeOfType<OkObjectResult>();
+        actionResult.Result.Should().BeOfType<OkObjectResult>();
     }
 
     [Test]
@@ -69,27 +72,33 @@ public class PublicEndpointsTests
             context,
             CreateCacheProvider(),
             new SlidingWindowRateLimiter(),
-            Options.Create(new ReviewOptions { RequireAuthentication = false }));
+            Options.Create(new ReviewOptions { RequireAuthentication = false, UserEditWindowHours = 24 }),
+            Options.Create(new S3Options { CdnBaseUrl = "https://cdn.example.com" }),
+            new StubRatingService());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("127.0.0.1");
         httpContext.Request.Headers.UserAgent = "UnitTest/1.0";
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(new[]
+        {
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, Guid.NewGuid().ToString())
+        }, "test"));
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
 
         var request = new CreateReviewRequest
         {
             Rating = 5,
-            Body = "Отличный товар, рекомендую!",
+            Text = "Отличный товар, рекомендую!",
             Title = "Лучшая покупка"
         };
 
-        var result = await controller.Create(5, request, CancellationToken.None);
+        var result = await controller.CreateReview(5, request, CancellationToken.None);
 
-        result.Should().BeOfType<AcceptedResult>();
+        result.Result.Should().BeOfType<CreatedResult>();
         var stored = await context.ProductReviews.SingleAsync();
         stored.Rating.Should().Be(5);
-        stored.IsApproved.Should().BeFalse();
-        stored.Body.Should().Contain("Отличный товар");
+        stored.Status.Should().Be(ReviewStatus.Pending);
+        stored.Text.Should().Contain("Отличный товар");
     }
 
     private static AppDbContext CreateContext()
@@ -121,5 +130,10 @@ public class PublicEndpointsTests
             IReadOnlyList<RecommendationDto> data = Array.Empty<RecommendationDto>();
             return Task.FromResult(data);
         }
+    }
+
+    private sealed class StubRatingService : IRatingService
+    {
+        public Task RecomputeAsync(int productId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

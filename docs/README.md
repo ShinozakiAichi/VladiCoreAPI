@@ -2,6 +2,20 @@
 
 VladiCore is a monolithic ASP.NET Core 8.0 service backed by MySQL 8.0 that powers catalog, recommendations, analytics, and the PC builder experience.
 
+## API surface at a glance
+
+| Area | Endpoint highlights |
+| --- | --- |
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` |
+| Profiles | `GET /me`, `PUT /me`, `POST /users/{id}/block`, `DELETE /users/{id}/block` |
+| Catalog | `GET /products`, `GET /products/{id}`, `GET /products/{id}/price-history`, `GET /products/{id}/recommendations` |
+| Admin catalog | `POST /products`, `PUT /products/{id}`, `DELETE /products/{id}`, `POST /products/{id}/photos`, `DELETE /products/{id}/photos/{photoId}` |
+| Reviews | `GET /products/{id}/reviews`, `POST /products/{id}/reviews`, `PATCH /products/{productId}/reviews/{reviewId}`, `DELETE /products/{productId}/reviews/{reviewId}`, `POST /products/{productId}/reviews/{reviewId}/photos`, `POST /products/{productId}/reviews/{reviewId}/vote` |
+| Review moderation | `GET /reviews/moderation`, `POST /reviews/{reviewId}/approve`, `POST /reviews/{reviewId}/reject` |
+| Storage | `POST /storage/presign` |
+
+See `docs/api.http` for ready-to-run request samples.
+
 ## Prerequisites
 
 - .NET 8 SDK (`dotnet --info` should report version 8.x).
@@ -23,8 +37,10 @@ Key variables:
 | --- | --- |
 | `ConnectionStrings__Default` | MySQL connection string used by the API. |
 | `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey` | JWT bearer token configuration. Always replace the signing key. |
+| `Jwt__AccessTokenTtlSeconds`, `Jwt__RefreshTokenTtlSeconds` | Lifetimes (in seconds) for issued access and refresh tokens. |
 | `S3__Endpoint`, `S3__Bucket`, `S3__AccessKey`, `S3__SecretKey`, `S3__UseSsl`, `S3__CdnBaseUrl` | S3/MinIO-compatible object storage used for product assets and review photos. |
 | `Reviews__RequireAuthentication` | Set to `true` to require authenticated users for review submission and presign operations. |
+| `Reviews__UserEditWindowHours` | Hours an author may edit their review before it is locked. |
 | `ASPNETCORE_URLS` | HTTP binding inside the container (defaults to port `8080`). |
 | `API_HTTP_PORT` | Host port exposed by Docker Compose. |
 | `DOCKER_NETWORK_NAME` | Shared Docker network that contains both the API and database containers. |

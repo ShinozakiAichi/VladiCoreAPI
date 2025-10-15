@@ -14,6 +14,9 @@ TRUNCATE TABLE OrderItems;
 TRUNCATE TABLE ProductViews;
 TRUNCATE TABLE Products;
 TRUNCATE TABLE ProductPriceHistory;
+TRUNCATE TABLE ProductImages;
+TRUNCATE TABLE ProductReviews;
+TRUNCATE TABLE RefreshTokens;
 
 INSERT INTO Cpus (Id, Name, Socket, Tdp, PerfScore) VALUES
 (1, 'AMD Ryzen 5 5600X', 'AM4', 65, 320),
@@ -71,18 +74,18 @@ INSERT INTO Storages (Id, Name, Type, CapacityGb, PerfScore) VALUES
 (4, 'Seagate Barracuda 2TB', 'HDD', 2000, 120),
 (5, 'Samsung 980 Pro 2TB', 'NVME', 2000, 450);
 
-INSERT INTO Products (Id, Sku, Name, CategoryId, Price, OldPrice, Attributes, CreatedAt) VALUES
-(1, 'CPU-5600X', 'AMD Ryzen 5 5600X', 1, 249.99, NULL, JSON_OBJECT('componentType','cpu','componentId',1), UTC_TIMESTAMP(6)),
-(2, 'CPU-12400F', 'Intel Core i5-12400F', 1, 229.99, NULL, JSON_OBJECT('componentType','cpu','componentId',2), UTC_TIMESTAMP(6)),
-(3, 'MB-B550-TOMA', 'MSI B550 Tomahawk', 2, 189.99, NULL, JSON_OBJECT('componentType','motherboard','componentId',1), UTC_TIMESTAMP(6)),
-(4, 'MB-Z690P', 'ASUS PRIME Z690-P', 2, 239.99, NULL, JSON_OBJECT('componentType','motherboard','componentId',2), UTC_TIMESTAMP(6)),
-(5, 'RAM-32-TZ', 'G.Skill Trident Z 32GB DDR4-3600', 3, 169.99, NULL, JSON_OBJECT('componentType','ram','componentId',2), UTC_TIMESTAMP(6)),
-(6, 'GPU-4070', 'NVIDIA RTX 4070', 4, 599.99, NULL, JSON_OBJECT('componentType','gpu','componentId',1), UTC_TIMESTAMP(6)),
-(7, 'PSU-GX750', 'Seasonic Focus GX-750', 6, 139.99, NULL, JSON_OBJECT('componentType','psu','componentId',2), UTC_TIMESTAMP(6)),
-(8, 'CASE-MESHIFY2C', 'Fractal Meshify 2 Compact', 7, 119.99, NULL, JSON_OBJECT('componentType','case','componentId',2), UTC_TIMESTAMP(6)),
-(9, 'COOL-NHU12S', 'Noctua NH-U12S', 8, 69.99, NULL, JSON_OBJECT('componentType','cooler','componentId',1), UTC_TIMESTAMP(6)),
-(10, 'SSD-SN570', 'WD Blue SN570 1TB', 5, 89.99, NULL, JSON_OBJECT('componentType','storage','componentId',2), UTC_TIMESTAMP(6)),
-(11, 'SSD-MX500', 'Crucial MX500 1TB', 5, 79.99, NULL, JSON_OBJECT('componentType','storage','componentId',3), UTC_TIMESTAMP(6));
+INSERT INTO Products (Id, Sku, Name, CategoryId, Price, Stock, Specs, Description, CreatedAt, UpdatedAt) VALUES
+(1, 'CPU-5600X', 'AMD Ryzen 5 5600X', 1, 249.99, 50, JSON_OBJECT('componentType','cpu','componentId',1), 'Шестиядерный процессор для игр', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(2, 'CPU-12400F', 'Intel Core i5-12400F', 1, 229.99, 50, JSON_OBJECT('componentType','cpu','componentId',2), 'Производительный процессор для офисных и игровых сборок', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(3, 'MB-B550-TOMA', 'MSI B550 Tomahawk', 2, 189.99, 25, JSON_OBJECT('componentType','motherboard','componentId',1), 'Материнская плата с поддержкой PCIe 4.0', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(4, 'MB-Z690P', 'ASUS PRIME Z690-P', 2, 239.99, 30, JSON_OBJECT('componentType','motherboard','componentId',2), 'Материнская плата для процессоров Intel 12-го поколения', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(5, 'RAM-32-TZ', 'G.Skill Trident Z 32GB DDR4-3600', 3, 169.99, 40, JSON_OBJECT('componentType','ram','componentId',2), 'Высокоскоростная память DDR4', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(6, 'GPU-4070', 'NVIDIA RTX 4070', 4, 599.99, 15, JSON_OBJECT('componentType','gpu','componentId',1), 'Видеокарта последнего поколения', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(7, 'PSU-GX750', 'Seasonic Focus GX-750', 6, 139.99, 60, JSON_OBJECT('componentType','psu','componentId',2), 'Платиновый блок питания 750W', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(8, 'CASE-MESHIFY2C', 'Fractal Meshify 2 Compact', 7, 119.99, 20, JSON_OBJECT('componentType','case','componentId',2), 'Компактный корпус с отличной вентиляцией', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(9, 'COOL-NHU12S', 'Noctua NH-U12S', 8, 69.99, 45, JSON_OBJECT('componentType','cooler','componentId',1), 'Тихий и эффективный кулер', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(10, 'SSD-SN570', 'WD Blue SN570 1TB', 5, 89.99, 80, JSON_OBJECT('componentType','storage','componentId',2), 'Быстрый NVMe накопитель на 1ТБ', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+(11, 'SSD-MX500', 'Crucial MX500 1TB', 5, 79.99, 70, JSON_OBJECT('componentType','storage','componentId',3), 'Надежный SATA SSD', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6));
 
 INSERT INTO ProductPriceHistory (ProductId, Price, ChangedAt) VALUES
 (1, 269.99, UTC_TIMESTAMP(6) - INTERVAL 14 DAY),

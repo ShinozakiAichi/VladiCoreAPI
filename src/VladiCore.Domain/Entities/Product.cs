@@ -15,11 +15,19 @@ public class Product
 
     public decimal Price { get; set; }
 
-    public decimal? OldPrice { get; set; }
+    public int Stock { get; set; }
 
-    public string? Attributes { get; set; }
+    public string? Specs { get; set; }
+
+    public string? Description { get; set; }
+
+    public decimal AverageRating { get; set; }
+
+    public int RatingsCount { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
 
     public Category Category { get; set; } = null!;
 

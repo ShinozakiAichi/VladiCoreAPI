@@ -1,12 +1,23 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS CoPurchases;
+DROP TABLE IF EXISTS RefreshTokens;
+DROP TABLE IF EXISTS ProductReviews;
+DROP TABLE IF EXISTS ProductImages;
 DROP TABLE IF EXISTS ProductPriceHistory;
 DROP TABLE IF EXISTS ProductViews;
 DROP TABLE IF EXISTS OrderItems;
 DROP TABLE IF EXISTS Orders;
 DROP TABLE IF EXISTS Products;
 DROP TABLE IF EXISTS Categories;
+DROP TABLE IF EXISTS AspNetUserTokens;
+DROP TABLE IF EXISTS AspNetUserRoles;
+DROP TABLE IF EXISTS AspNetUserLogins;
+DROP TABLE IF EXISTS AspNetUserClaims;
+DROP TABLE IF EXISTS AspNetRoleClaims;
+DROP TABLE IF EXISTS AspNetUsers;
+DROP TABLE IF EXISTS AspNetRoles;
 DROP TABLE IF EXISTS Cpus;
 DROP TABLE IF EXISTS Motherboards;
 DROP TABLE IF EXISTS Rams;
@@ -15,6 +26,82 @@ DROP TABLE IF EXISTS Psus;
 DROP TABLE IF EXISTS Cases;
 DROP TABLE IF EXISTS Coolers;
 DROP TABLE IF EXISTS Storages;
+
+CREATE TABLE AspNetRoles (
+  Id CHAR(36) NOT NULL,
+  Name VARCHAR(256) NULL,
+  NormalizedName VARCHAR(256) NULL,
+  ConcurrencyStamp LONGTEXT NULL,
+  PRIMARY KEY (Id),
+  UNIQUE INDEX RoleNameIndex (NormalizedName)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AspNetUsers (
+  Id CHAR(36) NOT NULL,
+  DisplayName VARCHAR(64) NULL,
+  IsBlocked BIT NOT NULL DEFAULT 0,
+  CreatedAt DATETIME(6) NOT NULL,
+  UpdatedAt DATETIME(6) NOT NULL,
+  UserName VARCHAR(256) NULL,
+  NormalizedUserName VARCHAR(256) NULL,
+  Email VARCHAR(256) NULL,
+  NormalizedEmail VARCHAR(256) NULL,
+  EmailConfirmed BIT NOT NULL DEFAULT 0,
+  PasswordHash LONGTEXT NULL,
+  SecurityStamp LONGTEXT NULL,
+  ConcurrencyStamp LONGTEXT NULL,
+  PhoneNumber VARCHAR(32) NULL,
+  PhoneNumberConfirmed BIT NOT NULL DEFAULT 0,
+  TwoFactorEnabled BIT NOT NULL DEFAULT 0,
+  LockoutEnd DATETIME(6) NULL,
+  LockoutEnabled BIT NOT NULL DEFAULT 1,
+  AccessFailedCount INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (Id),
+  UNIQUE INDEX UserNameIndex (NormalizedUserName),
+  INDEX EmailIndex (NormalizedEmail)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AspNetRoleClaims (
+  Id INT AUTO_INCREMENT PRIMARY KEY,
+  RoleId CHAR(36) NOT NULL,
+  ClaimType LONGTEXT NULL,
+  ClaimValue LONGTEXT NULL,
+  CONSTRAINT FK_RoleClaims_Roles FOREIGN KEY (RoleId) REFERENCES AspNetRoles (Id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AspNetUserClaims (
+  Id INT AUTO_INCREMENT PRIMARY KEY,
+  UserId CHAR(36) NOT NULL,
+  ClaimType LONGTEXT NULL,
+  ClaimValue LONGTEXT NULL,
+  CONSTRAINT FK_UserClaims_Users FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AspNetUserLogins (
+  LoginProvider VARCHAR(128) NOT NULL,
+  ProviderKey VARCHAR(128) NOT NULL,
+  ProviderDisplayName VARCHAR(128) NULL,
+  UserId CHAR(36) NOT NULL,
+  PRIMARY KEY (LoginProvider, ProviderKey),
+  CONSTRAINT FK_UserLogins_Users FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AspNetUserRoles (
+  UserId CHAR(36) NOT NULL,
+  RoleId CHAR(36) NOT NULL,
+  PRIMARY KEY (UserId, RoleId),
+  CONSTRAINT FK_UserRoles_Users FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
+  CONSTRAINT FK_UserRoles_Roles FOREIGN KEY (RoleId) REFERENCES AspNetRoles (Id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AspNetUserTokens (
+  UserId CHAR(36) NOT NULL,
+  LoginProvider VARCHAR(128) NOT NULL,
+  Name VARCHAR(128) NOT NULL,
+  Value LONGTEXT NULL,
+  PRIMARY KEY (UserId, LoginProvider, Name),
+  CONSTRAINT FK_UserTokens_Users FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE Categories (
   Id INT AUTO_INCREMENT PRIMARY KEY,
@@ -30,12 +117,30 @@ CREATE TABLE Products (
   Name VARCHAR(256) NOT NULL,
   CategoryId INT NOT NULL,
   Price DECIMAL(12,2) NOT NULL,
-  OldPrice DECIMAL(12,2) NULL,
-  Attributes JSON NULL,
+  Stock INT NOT NULL DEFAULT 0,
+  Specs JSON NULL,
+  Description LONGTEXT NULL,
+  AverageRating DECIMAL(3,2) NOT NULL DEFAULT 0,
+  RatingsCount INT NOT NULL DEFAULT 0,
   CreatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  INDEX IX_Products_CategoryId (CategoryId),
-  INDEX IX_Products_Price (Price),
+  UpdatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX IX_Products_Category_Price (CategoryId, Price),
+  INDEX IX_Products_Name (Name),
+  FULLTEXT INDEX FT_Products_NameDescription (Name, Description),
   CONSTRAINT FK_Products_Categories FOREIGN KEY (CategoryId) REFERENCES Categories (Id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE ProductImages (
+  Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  ProductId INT NOT NULL,
+  ObjectKey VARCHAR(256) NOT NULL,
+  ETag VARCHAR(128) NOT NULL,
+  Url TEXT NOT NULL,
+  SortOrder INT NOT NULL DEFAULT 0,
+  CreatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UpdatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX IX_ProductImages_Product_Sort (ProductId, SortOrder),
+  CONSTRAINT FK_ProductImages_Products FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE ProductPriceHistory (
@@ -43,14 +148,15 @@ CREATE TABLE ProductPriceHistory (
   ProductId INT NOT NULL,
   Price DECIMAL(12,2) NOT NULL,
   ChangedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  INDEX IX_PriceHistory_ProductId_ChangedAt (ProductId, ChangedAt DESC),
-  CONSTRAINT FK_PriceHistory_Product FOREIGN KEY (ProductId) REFERENCES Products (Id)
+  INDEX IX_PriceHistory_Product_ChangedAt (ProductId, ChangedAt),
+  CONSTRAINT FK_PriceHistory_Product FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE Orders (
   Id INT AUTO_INCREMENT PRIMARY KEY,
-  UserId INT NULL,
-  CreatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+  UserId CHAR(36) NULL,
+  CreatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT FK_Orders_Users FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE OrderItems (
@@ -59,7 +165,6 @@ CREATE TABLE OrderItems (
   ProductId INT NOT NULL,
   Qty INT NOT NULL,
   UnitPrice DECIMAL(12,2) NOT NULL,
-  INDEX IX_OrderItems_ProductId (ProductId),
   INDEX IX_OrderItems_Order_Product (OrderId, ProductId),
   CONSTRAINT FK_OrderItems_Orders FOREIGN KEY (OrderId) REFERENCES Orders (Id) ON DELETE CASCADE,
   CONSTRAINT FK_OrderItems_Products FOREIGN KEY (ProductId) REFERENCES Products (Id)
@@ -68,11 +173,49 @@ CREATE TABLE OrderItems (
 CREATE TABLE ProductViews (
   Id INT AUTO_INCREMENT PRIMARY KEY,
   ProductId INT NOT NULL,
-  UserId INT NULL,
+  UserId CHAR(36) NULL,
   SessionId VARCHAR(64) NOT NULL,
   ViewedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  INDEX IX_ProductViews_ProductId_ViewedAt (ProductId, ViewedAt),
+  INDEX IX_ProductViews_Product_ViewedAt (ProductId, ViewedAt),
   CONSTRAINT FK_ProductViews_Product FOREIGN KEY (ProductId) REFERENCES Products (Id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE ProductReviews (
+  Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  ProductId INT NOT NULL,
+  UserId CHAR(36) NOT NULL,
+  Rating TINYINT UNSIGNED NOT NULL,
+  Title VARCHAR(120) NULL,
+  Text LONGTEXT NOT NULL,
+  Photos JSON NULL,
+  IsApproved BIT NOT NULL DEFAULT 0,
+  CreatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UpdatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX IX_ProductReviews_Product_IsApproved_CreatedAt (ProductId, IsApproved, CreatedAt),
+  INDEX IX_ProductReviews_Product_Rating (ProductId, Rating),
+  CONSTRAINT FK_ProductReviews_Product FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE CASCADE,
+  CONSTRAINT FK_ProductReviews_User FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE RefreshTokens (
+  Id CHAR(36) NOT NULL PRIMARY KEY,
+  UserId CHAR(36) NOT NULL,
+  ExpiresAt DATETIME(6) NOT NULL,
+  CreatedAt DATETIME(6) NOT NULL,
+  RevokedAt DATETIME(6) NULL,
+  INDEX IX_RefreshTokens_User (UserId),
+  CONSTRAINT FK_RefreshTokens_User FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE CoPurchases (
+  Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  ProductId INT NOT NULL,
+  WithProductId INT NOT NULL,
+  Score DOUBLE NOT NULL,
+  UpdatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE INDEX UX_CoPurchases_Product_With (ProductId, WithProductId),
+  CONSTRAINT FK_CoPurchases_Product FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE CASCADE,
+  CONSTRAINT FK_CoPurchases_WithProduct FOREIGN KEY (WithProductId) REFERENCES Products (Id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE Cpus (
@@ -138,23 +281,9 @@ CREATE TABLE Coolers (
 CREATE TABLE Storages (
   Id INT AUTO_INCREMENT PRIMARY KEY,
   Name VARCHAR(128) NOT NULL,
-  Type ENUM('HDD','SATA_SSD','NVME') NOT NULL,
+  Type VARCHAR(16) NOT NULL,
   CapacityGb INT NOT NULL,
   PerfScore INT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-DROP TRIGGER IF EXISTS trg_products_price_history;
-DELIMITER $$
-CREATE TRIGGER trg_products_price_history
-BEFORE UPDATE ON Products
-FOR EACH ROW
-BEGIN
-  IF NEW.Price <> OLD.Price THEN
-    INSERT INTO ProductPriceHistory(ProductId, Price, ChangedAt)
-    VALUES (OLD.Id, NEW.Price, UTC_TIMESTAMP(6));
-    SET NEW.OldPrice = OLD.Price;
-  END IF;
-END$$
-DELIMITER ;
 
 SET FOREIGN_KEY_CHECKS = 1;

@@ -2,6 +2,7 @@ using System.Text;
 using Amazon.Runtime;
 using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -13,9 +14,12 @@ using VladiCore.Api.Infrastructure.ObjectStorage;
 using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Api.Middleware;
 using VladiCore.Api.Swagger;
+using VladiCore.Api.Services;
 using VladiCore.Data.Contexts;
 using VladiCore.Data.Infrastructure;
 using VladiCore.Data.Provisioning;
+using VladiCore.Domain.Entities;
+using VladiCore.Domain.Services;
 using VladiCore.PcBuilder.Services;
 using VladiCore.Recommendations.Services;
 
@@ -37,9 +41,23 @@ var connectionString = config.GetConnectionString("Default")
 
 builder.Services.Configure<ReviewOptions>(config.GetSection("Reviews"));
 builder.Services.Configure<S3Options>(config.GetSection("S3"));
+builder.Services.Configure<JwtOptions>(config.GetSection("Jwt"));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+
+builder.Services
+    .AddIdentityCore<ApplicationUser>(options =>
+    {
+        options.Password.RequireDigit = true;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredLength = 8;
+    })
+    .AddRoles<IdentityRole<Guid>>()
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddDefaultTokenProviders();
 
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ICacheProvider, MemoryCacheProvider>();
@@ -52,6 +70,10 @@ builder.Services.AddScoped<IPriceHistoryService, PriceHistoryService>();
 builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 builder.Services.AddScoped<IPcCompatibilityService, PcCompatibilityService>();
 builder.Services.AddScoped<IPcAutoBuilderService, PcAutoBuilderService>();
+builder.Services.AddScoped<IRatingService, RatingService>();
+builder.Services.AddScoped<JwtTokenService>();
+
+builder.Services.AddProblemDetails();
 
 builder.Services.AddSingleton<IAmazonS3>(sp =>
 {
@@ -164,14 +186,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = jwtSection.GetValue<string>("Issuer"),
             ValidAudience = jwtSection.GetValue<string>("Audience"),
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
-            ClockSkew = TimeSpan.FromMinutes(2)
+            ClockSkew = TimeSpan.FromMinutes(1)
         };
     });
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
-    options.AddPolicy("UserOnly", policy => policy.RequireRole("User"));
+    options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("User", policy => policy.RequireRole("User", "Admin"));
 });
 
 var app = builder.Build();
@@ -182,6 +204,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 app.UseSerilogRequestLogging();
 app.UseRequestLogging();
 

@@ -1,4 +1,5 @@
 using System;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using VladiCore.Api.Infrastructure;
@@ -21,6 +22,20 @@ public abstract class BaseApiController : ControllerBase
     protected ICacheProvider Cache { get; }
 
     protected IRateLimiter RateLimiter { get; }
+
+    protected Guid? CurrentUserId
+    {
+        get
+        {
+            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (Guid.TryParse(value, out var id))
+            {
+                return id;
+            }
+
+            return null;
+        }
+    }
 
     protected IActionResult CachedOk(object value, string etag, TimeSpan ttl)
     {

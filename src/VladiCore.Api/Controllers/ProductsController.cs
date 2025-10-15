@@ -1,173 +1,177 @@
 using System;
 using System.Linq;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using MySqlConnector;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
-using VladiCore.Data.Repositories;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
 using VladiCore.Recommendations.Services;
 
 namespace VladiCore.Api.Controllers;
 
-[Route("api/products")]
+[Route("products")]
 public class ProductsController : BaseApiController
 {
     private readonly IPriceHistoryService _priceHistoryService;
     private readonly IRecommendationService _recommendationService;
-    private readonly ILogger<ProductsController> _logger;
-
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     public ProductsController(
         AppDbContext dbContext,
         ICacheProvider cache,
         IRateLimiter rateLimiter,
         IPriceHistoryService priceHistoryService,
-        IRecommendationService recommendationService,
-        ILogger<ProductsController> logger)
+        IRecommendationService recommendationService)
         : base(dbContext, cache, rateLimiter)
     {
         _priceHistoryService = priceHistoryService;
         _recommendationService = recommendationService;
-        _logger = logger;
     }
 
     [HttpGet]
     [AllowAnonymous]
-    public IActionResult GetProducts(int? categoryId = null, string? q = null, string sort = "price", int skip = 0, int take = 20)
+    public async Task<ActionResult<PagedResult<ProductDto>>> GetProducts(
+        [FromQuery] int? categoryId,
+        [FromQuery] decimal? minPrice,
+        [FromQuery] decimal? maxPrice,
+        [FromQuery] double? minRating,
+        [FromQuery] string? search,
+        [FromQuery] string sort = "-created",
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
-        skip = Math.Max(0, skip);
-        take = Math.Max(1, Math.Min(100, take));
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        sort = string.IsNullOrWhiteSpace(sort) ? "-created" : sort.Trim().ToLowerInvariant();
 
-        var cacheKey = $"products:{categoryId}:{q}:{sort}:{skip}:{take}";
-        object result;
-
-        try
+        var cacheKey = $"products:list:{categoryId}:{minPrice}:{maxPrice}:{minRating}:{search}:{sort}:{page}:{pageSize}";
+        var cached = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(2), async () =>
         {
-            result = Cache.GetOrCreate(cacheKey, TimeSpan.FromSeconds(30), () =>
+            IQueryable<Product> query = DbContext.Products.AsNoTracking().Include(p => p.Images);
+
+            if (categoryId.HasValue)
             {
-                var repository = new EfRepository<Product>(DbContext);
-                IQueryable<Product> query = repository.Query().AsNoTracking();
-                query = query.Include(p => p.Images);
+                query = query.Where(p => p.CategoryId == categoryId.Value);
+            }
 
-                if (categoryId.HasValue)
-                {
-                    query = query.Where(p => p.CategoryId == categoryId.Value);
-                }
+            if (minPrice.HasValue)
+            {
+                query = query.Where(p => p.Price >= minPrice.Value);
+            }
 
-                if (!string.IsNullOrWhiteSpace(q))
-                {
-                    query = query.Where(p => p.Name.Contains(q));
-                }
+            if (maxPrice.HasValue)
+            {
+                query = query.Where(p => p.Price <= maxPrice.Value);
+            }
 
-                query = sort switch
-                {
-                    "price" => query.OrderBy(p => p.Price),
-                    "-price" => query.OrderByDescending(p => p.Price),
-                    "name" => query.OrderBy(p => p.Name),
-                    _ => query.OrderBy(p => p.Id)
-                };
+            if (minRating.HasValue)
+            {
+                query = query.Where(p => p.RatingsCount == 0 || p.AverageRating >= (decimal)minRating.Value);
+            }
 
-                var total = query.Count();
-                var items = query
-                    .Skip(skip)
-                    .Take(take)
-                    .ToList()
-                    .Select(ToDto)
-                    .ToList();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(p => p.Name.Contains(term) || (p.Description != null && p.Description.Contains(term)));
+            }
 
-                return new { total, items };
-            });
-        }
-        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
-        {
-            _logger.LogError(ex, "Product catalog storage is not initialized");
-            return StorageNotInitialized();
-        }
+            query = sort switch
+            {
+                "price" => query.OrderBy(p => p.Price),
+                "-price" => query.OrderByDescending(p => p.Price),
+                "rating" => query.OrderByDescending(p => p.AverageRating).ThenByDescending(p => p.RatingsCount),
+                "-rating" => query.OrderBy(p => p.AverageRating).ThenBy(p => p.RatingsCount),
+                "created" => query.OrderBy(p => p.CreatedAt),
+                _ => query.OrderByDescending(p => p.CreatedAt)
+            };
 
-        var etag = HashUtility.Compute(System.Text.Json.JsonSerializer.Serialize(result));
-        return CachedOk(result, etag, TimeSpan.FromSeconds(60));
+            var skip = (page - 1) * pageSize;
+            var total = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+            var items = await query
+                .Skip(skip)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var dtos = items.Select(ToDto).ToList();
+            return new PagedResult<ProductDto>
+            {
+                Items = dtos,
+                Total = total,
+                Skip = skip,
+                Take = pageSize
+            };
+        }).ConfigureAwait(false);
+
+        var etag = HashUtility.Compute(System.Text.Json.JsonSerializer.Serialize(cached));
+        return CachedOk(cached, etag, TimeSpan.FromMinutes(1));
     }
 
     [HttpGet("{id:int}")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetProduct(int id)
+    public async Task<ActionResult<ProductDto>> GetProduct(int id, CancellationToken cancellationToken = default)
     {
-        try
+        var cacheKey = $"products:{id}";
+        var dto = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), async () =>
         {
-            var repository = new EfRepository<Product>(DbContext);
-            var query = repository.Query().AsNoTracking().Include(p => p.Images);
-            var product = await query.FirstOrDefaultAsync(p => p.Id == id);
-            if (product == null)
-            {
-                return NotFound();
-            }
+            var product = await DbContext.Products
+                .AsNoTracking()
+                .Include(p => p.Images)
+                .FirstOrDefaultAsync(p => p.Id == id, cancellationToken)
+                .ConfigureAwait(false);
+            return product == null ? null : ToDto(product);
+        }).ConfigureAwait(false);
 
-            var etag = HashUtility.Compute($"product:{product.Id}:{product.Price}:{product.UpdatedAt()}");
-            return CachedOk(ToDto(product), etag, TimeSpan.FromSeconds(60));
-        }
-        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
+        if (dto == null)
         {
-            _logger.LogError(ex, "Product catalog storage is not initialized");
-            return StorageNotInitialized();
+            return NotFound(ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status404NotFound, "Product not found"));
         }
+
+        var etag = HashUtility.Compute(System.Text.Json.JsonSerializer.Serialize(dto));
+        return CachedOk(dto, etag, TimeSpan.FromMinutes(5));
     }
 
     [HttpGet("{id:int}/price-history")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetPriceHistory(int id, DateTime? from = null, DateTime? to = null, string bucket = "day")
+    public async Task<ActionResult<IReadOnlyCollection<PricePointDto>>> GetPriceHistory(
+        int id,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] string bucket = "day",
+        CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
-        var fromDate = from ?? now.AddDays(-30);
-        var toDate = to ?? now;
+        var fromDate = from ?? DateTime.UtcNow.AddDays(-30);
+        var toDate = to ?? DateTime.UtcNow;
+        if (fromDate >= toDate)
+        {
+            return BadRequest(ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status400BadRequest, "`from` must be earlier than `to`."));
+        }
 
-        try
-        {
-            var series = await _priceHistoryService.GetSeriesAsync(id, fromDate, toDate, bucket);
-            var etag = HashUtility.Compute($"history:{id}:{fromDate:O}:{toDate:O}:{bucket}:{series.Count}");
-            return CachedOk(series, etag, TimeSpan.FromSeconds(60));
-        }
-        catch (MySqlException ex) when (IsStorageNotInitializedError(ex))
-        {
-            _logger.LogError(ex, "Product catalog storage is not initialized");
-            return StorageNotInitialized();
-        }
+        var series = await _priceHistoryService.GetSeriesAsync(id, fromDate, toDate, bucket).ConfigureAwait(false);
+        return Ok(series);
     }
 
     [HttpGet("{id:int}/recommendations")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetRecommendations(int id, int take = 10, int skip = 0)
+    public async Task<ActionResult<IReadOnlyList<RecommendationDto>>> GetRecommendations(
+        int id,
+        [FromQuery] int take = 6,
+        [FromQuery] int skip = 0,
+        CancellationToken cancellationToken = default)
     {
-        var cacheKey = $"reco:{id}:{take}:{skip}";
-        var recommendations = await Cache.GetOrCreateAsync(cacheKey, TimeSpan.FromMinutes(5), () =>
-            _recommendationService.GetRecommendationsAsync(id, take, skip));
+        take = Math.Clamp(take, 1, 20);
+        skip = Math.Max(0, skip);
+        var recommendations = await Cache.GetOrCreateAsync(
+            $"reco:{id}:{take}:{skip}",
+            TimeSpan.FromMinutes(10),
+            () => _recommendationService.GetRecommendationsAsync(id, take, skip)).ConfigureAwait(false);
 
-        var etag = HashUtility.Compute($"reco:{id}:{take}:{skip}:{recommendations.Count}");
-        return CachedOk(recommendations, etag, TimeSpan.FromSeconds(300));
-    }
-
-    private ObjectResult StorageNotInitialized()
-    {
-        var problemDetails = new ProblemDetails
-        {
-            Title = "Storage not initialized",
-            Detail = "Database schema is missing. Migrations must be applied.",
-            Status = StatusCodes.Status503ServiceUnavailable
-        };
-
-        return StatusCode(StatusCodes.Status503ServiceUnavailable, problemDetails);
-    }
-
-    private static bool IsStorageNotInitializedError(MySqlException exception)
-    {
-        const int noSuchTableErrorCode = 1146;
-        return exception.Number == noSuchTableErrorCode ||
-            exception.Message.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase);
+        return Ok(recommendations);
     }
 
     private static ProductDto ToDto(Product product)
@@ -179,28 +183,42 @@ public class ProductsController : BaseApiController
             Name = product.Name,
             CategoryId = product.CategoryId,
             Price = product.Price,
-            OldPrice = product.OldPrice,
-            Attributes = product.Attributes,
-            Images = product.Images
-                .OrderByDescending(i => i.CreatedAt)
+            Stock = product.Stock,
+            Specs = DeserializeSpecs(product.Specs),
+            Description = product.Description,
+            AverageRating = (double)product.AverageRating,
+            RatingsCount = product.RatingsCount,
+            Photos = product.Images
+                .OrderBy(p => p.SortOrder)
+                .ThenBy(p => p.Id)
                 .Select(image => new ProductImageDto
                 {
                     Id = image.Id,
                     Key = image.ObjectKey,
                     Url = image.Url,
-                    ThumbnailUrl = image.ThumbnailUrl,
-                    CreatedAt = image.CreatedAt
+                    ETag = image.ETag,
+                    SortOrder = image.SortOrder,
+                    CreatedAt = image.CreatedAt,
+                    UpdatedAt = image.UpdatedAt
                 })
                 .ToList()
         };
     }
-}
 
-internal static class ProductExtensions
-{
-    public static string UpdatedAt(this Product product)
+    private static Dictionary<string, object>? DeserializeSpecs(string? specs)
     {
-        var imageStamp = string.Join('|', product.Images.OrderBy(i => i.Id).Select(i => i.ObjectKey));
-        return $"{product.Price}:{product.OldPrice}:{product.Attributes}:{imageStamp}";
+        if (string.IsNullOrWhiteSpace(specs))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object>>(specs, SerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

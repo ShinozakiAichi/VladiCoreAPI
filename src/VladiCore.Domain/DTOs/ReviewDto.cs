@@ -9,17 +9,27 @@ public class ReviewDto
 
     public int ProductId { get; set; }
 
-    public string? UserId { get; set; }
+    public Guid UserId { get; set; }
+
+    public string? UserDisplay { get; set; }
 
     public byte Rating { get; set; }
 
     public string? Title { get; set; }
 
-    public string Body { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
 
     public IReadOnlyList<string> Photos { get; set; } = Array.Empty<string>();
 
-    public bool IsApproved { get; set; }
+    public string Status { get; set; } = string.Empty;
+
+    public string? ModerationNote { get; set; }
+
+    public int UsefulUp { get; set; }
+
+    public int UsefulDown { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
 }
