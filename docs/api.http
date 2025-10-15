@@ -1,126 +1,209 @@
-### Get products
-GET http://localhost:5200/api/products?skip=0&take=5
+### Register
+POST http://localhost:5200/auth/register
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "P@ssw0rd!",
+  "displayName": "Demo User"
+}
+
+### Login
+POST http://localhost:5200/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "P@ssw0rd!"
+}
+
+### Refresh token
+POST http://localhost:5200/auth/refresh
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Get profile
+GET http://localhost:5200/me
+Authorization: Bearer {{accessToken}}
+
+### Update profile
+PUT http://localhost:5200/me
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "displayName": "Updated User",
+  "phoneNumber": "+1234567890"
+}
+
+### List products
+GET http://localhost:5200/products?categoryId=1&minPrice=100&sort=-created&page=1&pageSize=10
 Accept: application/json
 
-### Search products by keyword
-GET http://localhost:5200/api/products?q=Ryzen
-Accept: application/json
-
-### Get product details
-GET http://localhost:5200/api/products/1
+### Product details
+GET http://localhost:5200/products/1
 Accept: application/json
 
 ### Price history
-GET http://localhost:5200/api/products/1/price-history?bucket=day&from={{from}}&to={{to}}
+GET http://localhost:5200/products/1/price-history?bucket=day&from={{from}}&to={{to}}
 Accept: application/json
 
 ### Recommendations
-GET http://localhost:5200/api/products/1/recommendations?take=5
+GET http://localhost:5200/products/1/recommendations?take=5
 Accept: application/json
 
-### Track view
-POST http://localhost:5200/api/track/view
+### Admin create product
+POST http://localhost:5200/products
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
-  "productId": 1,
-  "sessionId": "demo-session",
-  "userId": 42
+  "sku": "NEW-001",
+  "name": "Новый продукт",
+  "categoryId": 1,
+  "price": 199.99,
+  "stock": 25,
+  "description": "Описание товара",
+  "specs": {
+    "color": "black",
+    "warranty": "2y"
+  }
 }
 
-### Validate PC
-POST http://localhost:5200/api/pc/validate
+### Admin update product
+PUT http://localhost:5200/products/1
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
-  "cpuId": 2,
-  "motherboardId": 1,
-  "ramId": 2,
-  "gpuId": 1,
-  "psuId": 2,
-  "caseId": 2,
-  "coolerId": 1,
-  "storageIds": [2,3]
-}
-
-### Auto build PC
-POST http://localhost:5200/api/pc/autobuild
-Content-Type: application/json
-
-{
-  "budget": 1500,
-  "priorities": ["gaming"],
-  "platform": "amd"
-}
-
-### Admin upsert product
-POST http://localhost:5200/api/products
-Authorization: Bearer {{jwt}}
-Content-Type: application/json
-
-{
-  "id": 1,
   "sku": "CPU-5600X",
   "name": "AMD Ryzen 5 5600X",
   "categoryId": 1,
   "price": 239.99,
-  "attributes": "{\"componentType\":\"cpu\",\"componentId\":1}"
+  "stock": 42,
+  "description": "Обновленное описание",
+  "specs": {
+    "componentType": "cpu",
+    "componentId": 1
+  }
 }
 
-### Analytics co-purchase
-GET http://localhost:5200/api/analytics/top-copurchases?take=10
-Accept: application/json
+### Admin delete product
+DELETE http://localhost:5200/products/11
+Authorization: Bearer {{adminToken}}
 
-### Analytics top views
-GET http://localhost:5200/api/analytics/top-views?take=10
-Accept: application/json
+### Request presign for product image
+POST http://localhost:5200/storage/presign
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "type": "products",
+  "contentType": "image/jpeg",
+  "size": 4000000,
+  "entityId": 1
+}
+
+### Confirm product photo
+POST http://localhost:5200/products/1/photos
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "key": "products/1/{{objectKey}}",
+  "etag": "{{etag}}",
+  "sortOrder": 0
+}
 
 ### List product reviews
-GET http://localhost:5200/api/products/1/reviews?skip=0&take=10&order=createdAt
+GET http://localhost:5200/api/products/1/reviews?skip=0&take=10&sort=-createdAt
 Accept: application/json
 
-### Submit product review
+### Create review
 POST http://localhost:5200/api/products/1/reviews
+Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
   "rating": 5,
-  "title": "🔥",
-  "body": "Стабильно держит частоты, рекомендую",
-  "photos": [
-    "https://cdn.example.com/reviews/1.jpg"
-  ]
+  "title": "Отличный товар",
+  "text": "Стабильно работает, рекомендую",
+  "photos": ["reviews/10/photo.jpg"]
 }
 
-### Approve review (admin)
-POST http://localhost:5200/api/products/1/reviews/10/approve
-Authorization: Bearer {{jwt}}
-
-### Delete review (admin)
-DELETE http://localhost:5200/api/products/1/reviews/10
-Authorization: Bearer {{jwt}}
-
-### Request presigned upload (user)
-POST http://localhost:5200/api/uploads/presign
-Authorization: Bearer {{userJwt}}
+### Patch review
+PATCH http://localhost:5200/api/products/1/reviews/1
+Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "extension": "jpg",
-  "contentType": "image/jpeg",
-  "maxFileSize": 5000000,
-  "purpose": "reviews"
+  "rating": 4,
+  "title": "Обновленный отзыв",
+  "text": "После месяца использования всё ещё доволен",
+  "photos": []
 }
 
-### Upload product image (admin)
-POST http://localhost:5200/api/products/1/images/upload
-Authorization: Bearer {{jwt}}
-Content-Type: multipart/form-data; boundary=BOUNDARY
+### Delete review (owner or admin)
+DELETE http://localhost:5200/api/products/1/reviews/1
+Authorization: Bearer {{accessToken}}
 
---BOUNDARY
-Content-Disposition: form-data; name="file"; filename="photo.jpg"
-Content-Type: image/jpeg
+### Request presign for review photo
+POST http://localhost:5200/storage/presign
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
 
-{{file}}
+{
+  "type": "reviews",
+  "contentType": "image/png",
+  "size": 2000000,
+  "entityId": 1
+}
 
---BOUNDARY--
+### Attach review photo
+POST http://localhost:5200/api/products/1/reviews/1/photos
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "key": "reviews/1/{{objectKey}}",
+  "etag": "{{etag}}"
+}
+
+### Vote review helpfulness
+POST http://localhost:5200/api/products/1/reviews/1/vote
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "value": "up"
+}
+
+### Review moderation queue
+GET http://localhost:5200/api/reviews/moderation?status=Pending&skip=0&take=20
+Authorization: Bearer {{adminToken}}
+
+### Approve review
+POST http://localhost:5200/api/reviews/1/approve
+Authorization: Bearer {{adminToken}}
+
+### Reject review
+POST http://localhost:5200/api/reviews/1/reject
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "reason": "spam",
+  "note": "Detected promotional content"
+}
+
+### Admin block user
+POST http://localhost:5200/users/{{userId}}/block
+Authorization: Bearer {{adminToken}}
+
+### Admin unblock user
+DELETE http://localhost:5200/users/{{userId}}/block
+Authorization: Bearer {{adminToken}}

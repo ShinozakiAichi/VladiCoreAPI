@@ -1,30 +1,26 @@
 using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Processing;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Api.Infrastructure.ObjectStorage;
 using VladiCore.Data.Contexts;
-using VladiCore.Data.Repositories;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
 
 namespace VladiCore.Api.Controllers;
 
-[Authorize(Roles = "Admin")]
-[Route("api/products")]
+[Authorize(Policy = "Admin")]
+[Route("products")]
 public class AdminProductsController : BaseApiController
 {
-    private const int MaxUploadSizeBytes = 10_000_000;
-    private static readonly string[] AllowedContentTypes = { "image/jpeg", "image/png", "image/webp" };
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IObjectStorageService _storage;
 
     public AdminProductsController(
@@ -38,150 +34,224 @@ public class AdminProductsController : BaseApiController
     }
 
     [HttpPost]
-    public async Task<IActionResult> Upsert([FromBody] ProductDto dto)
+    public async Task<ActionResult<ProductDto>> CreateProduct(
+        [FromBody] UpsertProductRequest request,
+        CancellationToken cancellationToken = default)
     {
         if (!ModelState.IsValid)
         {
-            return UnprocessableEntity(ModelState);
+            return ValidationProblem(ModelState);
         }
 
-        var repository = new EfRepository<Product>(DbContext);
-        if (dto.Id == 0)
+        var now = DateTime.UtcNow;
+        var product = new Product
         {
-            var product = new Product
-            {
-                Sku = dto.Sku,
-                Name = dto.Name,
-                CategoryId = dto.CategoryId,
-                Price = dto.Price,
-                OldPrice = dto.OldPrice,
-                Attributes = dto.Attributes,
-                CreatedAt = DateTime.UtcNow
-            };
+            Sku = request.Sku.Trim(),
+            Name = request.Name.Trim(),
+            CategoryId = request.CategoryId,
+            Price = request.Price,
+            Stock = request.Stock,
+            Specs = request.Specs == null ? null : JsonSerializer.Serialize(request.Specs, SerializerOptions),
+            Description = request.Description,
+            AverageRating = 0m,
+            RatingsCount = 0,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
 
-            await repository.AddAsync(product);
-        }
-        else
+        await DbContext.Products.AddAsync(product, cancellationToken).ConfigureAwait(false);
+        await DbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        await DbContext.ProductPriceHistory.AddAsync(new ProductPriceHistory
         {
-            var product = await repository.FindAsync(dto.Id);
-            if (product == null)
-            {
-                return NotFound();
-            }
+            ProductId = product.Id,
+            Price = product.Price,
+            ChangedAt = now
+        }, cancellationToken).ConfigureAwait(false);
+        await DbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-            product.Sku = dto.Sku;
-            product.Name = dto.Name;
-            product.CategoryId = dto.CategoryId;
-            product.Price = dto.Price;
-            product.OldPrice = dto.OldPrice;
-            product.Attributes = dto.Attributes;
+        Cache.RemoveByPrefix("products");
+        Cache.RemoveByPrefix($"reco:{product.Id}");
+        var dto = await DbContext.Products.AsNoTracking().Include(p => p.Images).FirstAsync(p => p.Id == product.Id, cancellationToken);
+        return CreatedAtAction(nameof(ProductsController.GetProduct), "Products", new { id = product.Id }, ProductsController_ToDto(dto));
+    }
+
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> UpdateProduct(
+        int id,
+        [FromBody] UpsertProductRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ModelState.IsValid)
+        {
+            return ValidationProblem(ModelState);
         }
 
-        await repository.SaveChangesAsync();
-        Cache.RemoveByPrefix("products:");
-        Cache.RemoveByPrefix($"reco:{dto.Id}:");
+        var product = await DbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken).ConfigureAwait(false);
+        if (product == null)
+        {
+            return NotFound(ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status404NotFound, "Product not found"));
+        }
+
+        var originalPrice = product.Price;
+        product.Sku = request.Sku.Trim();
+        product.Name = request.Name.Trim();
+        product.CategoryId = request.CategoryId;
+        product.Price = request.Price;
+        product.Stock = request.Stock;
+        product.Specs = request.Specs == null ? null : JsonSerializer.Serialize(request.Specs, SerializerOptions);
+        product.Description = request.Description;
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await DbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        if (product.Price != originalPrice)
+        {
+            await DbContext.ProductPriceHistory.AddAsync(new ProductPriceHistory
+            {
+                ProductId = product.Id,
+                Price = product.Price,
+                ChangedAt = DateTime.UtcNow
+            }, cancellationToken).ConfigureAwait(false);
+            await DbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        Cache.RemoveByPrefix("products");
+        Cache.RemoveByPrefix($"reco:{product.Id}");
+        return NoContent();
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteProduct(int id, CancellationToken cancellationToken = default)
+    {
+        var product = await DbContext.Products.Include(p => p.Images).FirstOrDefaultAsync(p => p.Id == id, cancellationToken).ConfigureAwait(false);
+        if (product == null)
+        {
+            return NotFound(ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status404NotFound, "Product not found"));
+        }
+
+        DbContext.Products.Remove(product);
+        await DbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        Cache.RemoveByPrefix("products");
+        Cache.RemoveByPrefix($"reco:{id}");
 
         return NoContent();
     }
 
-    [HttpPost("{id:int}/images/upload")]
-    public async Task<IActionResult> UploadImage(int id, IFormFile? file, CancellationToken cancellationToken)
+    [HttpPost("{id:int}/photos")]
+    public async Task<ActionResult<ProductImageDto>> ConfirmPhoto(
+        int id,
+        [FromBody] ConfirmProductPhotoRequest request,
+        CancellationToken cancellationToken = default)
     {
-        if (file == null || file.Length == 0)
+        if (!ModelState.IsValid)
         {
-            return BadRequest("File is required.");
+            return ValidationProblem(ModelState);
         }
 
-        if (file.Length > MaxUploadSizeBytes)
-        {
-            return BadRequest("File exceeds maximum allowed size (10 MB).");
-        }
-
-        if (string.IsNullOrWhiteSpace(file.ContentType) || !AllowedContentTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
-        {
-            return BadRequest("Unsupported content type. Allowed: JPEG, PNG, WEBP.");
-        }
-
-        var product = await DbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        var product = await DbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken).ConfigureAwait(false);
         if (product == null)
         {
-            return NotFound();
+            return NotFound(ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status404NotFound, "Product not found"));
         }
 
-        await using var inputStream = file.OpenReadStream();
-        Image image;
-        try
+        if (!request.Key.StartsWith($"products/{id}/", StringComparison.Ordinal))
         {
-            image = await Image.LoadAsync(inputStream, cancellationToken).ConfigureAwait(false);
-        }
-        catch (UnknownImageFormatException)
-        {
-            return BadRequest("Unsupported image format.");
+            return BadRequest(ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status400BadRequest, "Invalid storage key prefix."));
         }
 
-        await using var originalStream = new MemoryStream();
-        await using var thumbnailStream = new MemoryStream();
-
-        using (image)
-        {
-            using var originalImage = image.Clone(ctx =>
-            {
-                ctx.AutoOrient();
-                ctx.Resize(new ResizeOptions
-                {
-                    Mode = ResizeMode.Max,
-                    Size = new Size(2048, 2048)
-                });
-            });
-
-            using var thumbnailImage = image.Clone(ctx =>
-            {
-                ctx.AutoOrient();
-                ctx.Resize(new ResizeOptions
-                {
-                    Mode = ResizeMode.Max,
-                    Size = new Size(400, 400)
-                });
-            });
-
-            await originalImage.SaveAsJpegAsync(originalStream, new JpegEncoder { Quality = 90 }, cancellationToken).ConfigureAwait(false);
-            await thumbnailImage.SaveAsJpegAsync(thumbnailStream, new JpegEncoder { Quality = 85 }, cancellationToken).ConfigureAwait(false);
-        }
-
-        originalStream.Position = 0;
-        thumbnailStream.Position = 0;
-
-        var baseKey = $"products/{id}/{Guid.NewGuid():N}";
-        var originalKey = $"{baseKey}.jpg";
-        var thumbnailKey = $"{baseKey}_thumb.jpg";
-
-        var originalUrl = await _storage.UploadAsync(originalKey, originalStream, "image/jpeg", cancellationToken).ConfigureAwait(false);
-        var thumbnailUrl = await _storage.UploadAsync(thumbnailKey, thumbnailStream, "image/jpeg", cancellationToken).ConfigureAwait(false);
-
-        var productImage = new ProductImage
+        var photo = new ProductImage
         {
             ProductId = id,
-            ObjectKey = originalKey,
-            ThumbnailKey = thumbnailKey,
-            Url = originalUrl,
-            ThumbnailUrl = thumbnailUrl,
-            CreatedAt = DateTime.UtcNow
+            ObjectKey = request.Key,
+            ETag = request.ETag,
+            Url = _storage.BuildUrl(request.Key),
+            SortOrder = request.SortOrder,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
-        await DbContext.ProductImages.AddAsync(productImage, cancellationToken).ConfigureAwait(false);
+        await DbContext.ProductImages.AddAsync(photo, cancellationToken).ConfigureAwait(false);
         await DbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        Cache.RemoveByPrefix($"products:{id}");
+        Cache.RemoveByPrefix($"reco:{id}");
 
-        Cache.RemoveByPrefix("products:");
-
-        var response = new ProductImageDto
+        var dto = new ProductImageDto
         {
-            Id = productImage.Id,
-            Key = productImage.ObjectKey,
-            Url = productImage.Url,
-            ThumbnailUrl = productImage.ThumbnailUrl,
-            CreatedAt = productImage.CreatedAt
+            Id = photo.Id,
+            Key = photo.ObjectKey,
+            Url = photo.Url,
+            ETag = photo.ETag,
+            SortOrder = photo.SortOrder,
+            CreatedAt = photo.CreatedAt,
+            UpdatedAt = photo.UpdatedAt
         };
 
-        return Ok(response);
+        return CreatedAtAction(nameof(ProductsController.GetProduct), "Products", new { id }, dto);
+    }
+
+    [HttpDelete("{productId:int}/photos/{photoId:long}")]
+    public async Task<IActionResult> DeletePhoto(int productId, long photoId, CancellationToken cancellationToken = default)
+    {
+        var photo = await DbContext.ProductImages.FirstOrDefaultAsync(p => p.Id == photoId && p.ProductId == productId, cancellationToken).ConfigureAwait(false);
+        if (photo == null)
+        {
+            return NotFound(ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status404NotFound, "Photo not found"));
+        }
+
+        DbContext.ProductImages.Remove(photo);
+        await DbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        Cache.RemoveByPrefix($"products:{productId}");
+        Cache.RemoveByPrefix($"reco:{productId}");
+
+        return NoContent();
+    }
+
+    private static ProductDto ProductsController_ToDto(Product product)
+    {
+        return new ProductDto
+        {
+            Id = product.Id,
+            Sku = product.Sku,
+            Name = product.Name,
+            CategoryId = product.CategoryId,
+            Price = product.Price,
+            Stock = product.Stock,
+            Specs = DeserializeSpecs(product.Specs),
+            Description = product.Description,
+            AverageRating = (double)product.AverageRating,
+            RatingsCount = product.RatingsCount,
+            Photos = product.Images
+                .OrderBy(p => p.SortOrder)
+                .ThenBy(p => p.Id)
+                .Select(image => new ProductImageDto
+                {
+                    Id = image.Id,
+                    Key = image.ObjectKey,
+                    Url = image.Url,
+                    ETag = image.ETag,
+                    SortOrder = image.SortOrder,
+                    CreatedAt = image.CreatedAt,
+                    UpdatedAt = image.UpdatedAt
+                })
+                .ToList()
+        };
+    }
+
+    private static Dictionary<string, object>? DeserializeSpecs(string? specs)
+    {
+        if (string.IsNullOrWhiteSpace(specs))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object>>(specs, SerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

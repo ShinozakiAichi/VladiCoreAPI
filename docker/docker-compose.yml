@@ -17,6 +17,8 @@ services:
       Jwt__Issuer: ${Jwt__Issuer:-VladiCore}
       Jwt__Audience: ${Jwt__Audience:-VladiCore}
       Jwt__SigningKey: ${Jwt__SigningKey:-replace-with-secure-key}
+      Jwt__AccessTokenTtlSeconds: ${Jwt__AccessTokenTtlSeconds:-900}
+      Jwt__RefreshTokenTtlSeconds: ${Jwt__RefreshTokenTtlSeconds:-1209600}
       Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default:-Information}
       Serilog__MinimumLevel__Override__Microsoft: ${Serilog__MinimumLevel__Override__Microsoft:-Warning}
       Serilog__MinimumLevel__Override__System: ${Serilog__MinimumLevel__Override__System:-Warning}
