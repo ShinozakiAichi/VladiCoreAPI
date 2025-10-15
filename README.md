@@ -57,16 +57,20 @@ Swagger UI is available at `http://localhost:5200/swagger`.
 
 ## Database provisioning
 
-The `SchemaBootstrapper` inspects every SQL file in `db/migrations/mysql` before executing migrations. It compares the desired
-tables and columns with MySQL `information_schema` metadata and applies idempotent `CREATE TABLE`/`ALTER TABLE` statements inside a
-transaction when differences are detected. Duplicate-table or duplicate-column errors are reported as `MIGRATION_SKIP`, while
-successful runs emit `MIGRATION_OK`. Sample log entries:
+The `SchemaBootstrapper` inspects every SQL file in `db/migrations/mysql` before executing migrations. It builds a desired schema
+plan, queries MySQL `information_schema` (`tables`, `columns`, `key_column_usage`, `referential_constraints`), and applies
+idempotent fixes (`CREATE TABLE`, `ALTER TABLE ADD/MODIFY`, `ALTER TABLE ADD CONSTRAINT`) inside a single transaction before any
+SQL script executes. Duplicate artifacts are reported as `MIGRATION_SKIP`, automatic fixes (type alignment, FK recreation) as
+`MIGRATION_FIX`, and successful runs emit `MIGRATION_OK`. Sample log entries:
 
 ```
 [INF] TABLE 'ProductReviews' EXISTS — SKIPPED
-[INF] COLUMN 'Status' EXISTS — TYPE MISMATCH — ALTERING TO (VARCHAR(140) NULL)
-[INF] COLUMN 'ModeratorId' NOT FOUND — ADDED (CHAR(36) NULL)
+[INF] COLUMN 'Status' EXISTS — TYPE OK
+[WRN] COLUMN 'ReviewId' TYPE mismatch — FIXING
+[INF] FOREIGN KEY 'FK_ProductReviewVotes_Reviews' recreated with compatible type
 ```
+
+Set `Database__AutoProvision__StrictMode=true` to fail fast on schema mismatches instead of attempting automatic fixes.
 
 ## Testing
 

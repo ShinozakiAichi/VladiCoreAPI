@@ -17,4 +17,7 @@ public sealed class DatabaseProvisioningOptions
     public string SeedsPath { get; init; } = "db/seed";
 
     public int TimeoutSeconds { get; init; } = 120;
+
+    public bool StrictMode { get; init; }
+        = false;
 }
