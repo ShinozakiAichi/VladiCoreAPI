@@ -55,6 +55,19 @@ dotnet run --project src/VladiCore.Api
 
 Swagger UI is available at `http://localhost:5200/swagger`.
 
+## Database provisioning
+
+The `SchemaBootstrapper` inspects every SQL file in `db/migrations/mysql` before executing migrations. It compares the desired
+tables and columns with MySQL `information_schema` metadata and applies idempotent `CREATE TABLE`/`ALTER TABLE` statements inside a
+transaction when differences are detected. Duplicate-table or duplicate-column errors are reported as `MIGRATION_SKIP`, while
+successful runs emit `MIGRATION_OK`. Sample log entries:
+
+```
+[INF] TABLE 'ProductReviews' EXISTS — SKIPPED
+[INF] COLUMN 'Status' EXISTS — TYPE MISMATCH — ALTERING TO (VARCHAR(140) NULL)
+[INF] COLUMN 'ModeratorId' NOT FOUND — ADDED (CHAR(36) NULL)
+```
+
 ## Testing
 
 ```bash
