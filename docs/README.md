@@ -16,6 +16,17 @@ VladiCore is a monolithic ASP.NET Core 8.0 service backed by MySQL 8.0 that powe
 
 See `docs/api.http` for ready-to-run request samples.
 
+## HUD plugin bootstrap configs
+
+On first plugin start the API seeds three demo HUD configs into the `hud-configs` directory
+(`HudDemoConfigs:OutputDirectory` in `appsettings.json`). Each render mode gets its own YAML file:
+
+- `holo_demo.yaml` – HOLOGRAM with glyph and icon.
+- `toast_demo.yaml` – TOAST similar to recipe/achievement pop-ups.
+- `bar_demo.yaml` – BOSSBAR with full progress.
+
+Reference copies of the generated files live in `docs/hud-configs/`.
+
 ## Prerequisites
 
 - .NET 8 SDK (`dotnet --info` should report version 8.x).
