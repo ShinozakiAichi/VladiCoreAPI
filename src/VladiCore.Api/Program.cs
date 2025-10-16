@@ -10,7 +10,6 @@ using Serilog;
 using Serilog.Events;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Api.Infrastructure.Database;
-using VladiCore.Api.Infrastructure.Hud;
 using VladiCore.Api.Infrastructure.ObjectStorage;
 using VladiCore.Api.Infrastructure.Options;
 using VladiCore.Api.Middleware;
@@ -43,7 +42,6 @@ var connectionString = config.GetConnectionString("Default")
 builder.Services.Configure<ReviewOptions>(config.GetSection("Reviews"));
 builder.Services.Configure<S3Options>(config.GetSection("S3"));
 builder.Services.Configure<JwtOptions>(config.GetSection("Jwt"));
-builder.Services.Configure<HudDemoConfigOptions>(config.GetSection("HudDemoConfigs"));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
@@ -112,7 +110,6 @@ builder.Services.AddSingleton<IAmazonS3>(sp =>
 
 builder.Services.AddSingleton<IObjectStorageService, S3StorageService>();
 builder.Services.AddHostedService<DatabaseProvisioningHostedService>();
-builder.Services.AddHostedService<HudDemoConfigSeeder>();
 
 var allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? Array.Empty<string>();
