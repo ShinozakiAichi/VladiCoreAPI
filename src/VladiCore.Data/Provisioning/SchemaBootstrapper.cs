@@ -1347,6 +1347,8 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
                 || definition.StartsWith("PRIMARY KEY", StringComparison.OrdinalIgnoreCase)
                 || definition.StartsWith("UNIQUE KEY", StringComparison.OrdinalIgnoreCase)
                 || definition.StartsWith("UNIQUE INDEX", StringComparison.OrdinalIgnoreCase)
+                || definition.StartsWith("FULLTEXT", StringComparison.OrdinalIgnoreCase)
+                || definition.StartsWith("SPATIAL", StringComparison.OrdinalIgnoreCase)
                 || definition.StartsWith("KEY", StringComparison.OrdinalIgnoreCase)
                 || definition.StartsWith("INDEX", StringComparison.OrdinalIgnoreCase)
                 || definition.StartsWith("FOREIGN KEY", StringComparison.OrdinalIgnoreCase);
