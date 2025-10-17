@@ -664,7 +664,8 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
 
         _logger.LogWarning("COLUMN '{Column}' TYPE mismatch — FIXING", instruction.Column.Name);
 
-        await AlterColumnAsync(connection, transaction, tableName, instruction.Column.Name, instruction.Column.DefinitionWithoutName, cancellationToken);
+        var sanitizedDefinition = SanitizeColumnDefinitionForAlter(instruction.Column.DefinitionWithoutName);
+        await AlterColumnAsync(connection, transaction, tableName, instruction.Column.Name, sanitizedDefinition, cancellationToken);
 
         var refreshed = await LoadColumnSchemaAsync(connection, transaction, tableName, instruction.Column.Name, cancellationToken);
         if (refreshed is not null)
@@ -858,6 +859,19 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
     private static bool AreColumnTypesCompatible(ColumnSchema left, ColumnSchema right)
     {
         return string.Equals(left.ColumnType, right.ColumnType, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string SanitizeColumnDefinitionForAlter(string definition)
+    {
+        if (string.IsNullOrWhiteSpace(definition))
+        {
+            return definition;
+        }
+
+        var sanitized = Regex.Replace(definition, "\\s+PRIMARY\\s+KEY\\b", string.Empty, RegexOptions.IgnoreCase);
+        sanitized = Regex.Replace(sanitized, "\\s{2,}", " ");
+
+        return sanitized.Trim();
     }
 
     private static string BuildColumnDefinition(ColumnSchema column)
