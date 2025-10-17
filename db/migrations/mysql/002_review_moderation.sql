@@ -1,23 +1,37 @@
 ALTER TABLE ProductReviews
-    ADD COLUMN Status VARCHAR(32) NOT NULL DEFAULT 'Pending',
-    ADD COLUMN ModerationNote VARCHAR(500) NULL,
-    ADD COLUMN IsDeleted BIT NOT NULL DEFAULT 0,
-    ADD COLUMN UsefulUp INT NOT NULL DEFAULT 0,
-    ADD COLUMN UsefulDown INT NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS Status VARCHAR(32) NOT NULL DEFAULT 'Pending';
+
+ALTER TABLE ProductReviews
+    ADD COLUMN IF NOT EXISTS ModerationNote VARCHAR(500) NULL;
+
+ALTER TABLE ProductReviews
+    ADD COLUMN IF NOT EXISTS IsDeleted BIT NOT NULL DEFAULT 0;
+
+ALTER TABLE ProductReviews
+    ADD COLUMN IF NOT EXISTS UsefulUp INT NOT NULL DEFAULT 0;
+
+ALTER TABLE ProductReviews
+    ADD COLUMN IF NOT EXISTS UsefulDown INT NOT NULL DEFAULT 0;
 
 UPDATE ProductReviews
 SET Status = CASE WHEN IsApproved = 1 THEN 'Approved' ELSE 'Pending' END;
 
 ALTER TABLE ProductReviews
-    DROP COLUMN IsApproved;
+    DROP COLUMN IF EXISTS IsApproved;
 
 ALTER TABLE ProductReviews
     MODIFY COLUMN Title VARCHAR(140) NULL;
 
-DROP INDEX IX_ProductReviews_Product_IsApproved_CreatedAt ON ProductReviews;
+ALTER TABLE ProductReviews
+    DROP FOREIGN KEY IF EXISTS FK_ProductReviews_Product;
+
+DROP INDEX IF EXISTS IX_ProductReviews_Product_IsApproved_CreatedAt ON ProductReviews;
 
 CREATE INDEX IX_ProductReviews_Product_Status_CreatedAt
     ON ProductReviews (ProductId, Status, CreatedAt);
+
+ALTER TABLE ProductReviews
+    ADD CONSTRAINT FK_ProductReviews_Product FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE CASCADE;
 
 CREATE INDEX IX_ProductReviews_User_Product
     ON ProductReviews (UserId, ProductId);
