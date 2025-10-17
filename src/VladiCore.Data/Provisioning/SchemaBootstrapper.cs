@@ -744,6 +744,29 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
         }
 
         var constraintName = instruction.ConstraintName ?? $"FK_{tableName}_{instruction.ColumnName}_{instruction.ReferencedTable}";
+
+        if (await HasForeignKeyViolationsAsync(
+                connection,
+                transaction,
+                tableName,
+                instruction.ColumnName,
+                instruction.ReferencedTable,
+                instruction.ReferencedColumn,
+                cancellationToken))
+        {
+            var violationMessage =
+                $"FOREIGN KEY '{constraintName}' skipped: '{tableName}.{instruction.ColumnName}' contains orphaned values without a matching '{instruction.ReferencedTable}.{instruction.ReferencedColumn}'.";
+
+            if (_options.StrictMode)
+            {
+                _logger.LogError(violationMessage);
+                throw new InvalidOperationException(violationMessage);
+            }
+
+            _logger.LogError(violationMessage);
+            return;
+        }
+
         var sqlBuilder = new StringBuilder();
         sqlBuilder.Append($"ALTER TABLE `{tableName}` ADD CONSTRAINT `{constraintName}` FOREIGN KEY (`{instruction.ColumnName}`) REFERENCES `{instruction.ReferencedTable}` (`{instruction.ReferencedColumn}`)");
         if (!string.IsNullOrWhiteSpace(instruction.OnDelete))
@@ -779,6 +802,35 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
         {
             _logger.LogWarning("MIGRATION_FIX {Message}", ex.Message);
         }
+    }
+
+    private async Task<bool> HasForeignKeyViolationsAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string tableName,
+        string columnName,
+        string referencedTable,
+        string referencedColumn,
+        CancellationToken cancellationToken)
+    {
+        ValidateIdentifier(tableName);
+        ValidateIdentifier(columnName);
+        ValidateIdentifier(referencedTable);
+        ValidateIdentifier(referencedColumn);
+
+        var sql = $@"SELECT 1 FROM `{tableName}` AS source
+LEFT JOIN `{referencedTable}` AS target ON source.`{columnName}` = target.`{referencedColumn}`
+WHERE source.`{columnName}` IS NOT NULL AND target.`{referencedColumn}` IS NULL
+LIMIT 1;";
+
+        await using var command = new MySqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = Math.Max(_options.TimeoutSeconds, 1)
+        };
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var hasViolations = await reader.ReadAsync(cancellationToken);
+        return hasViolations;
     }
 
     private async Task AddColumnAsync(
@@ -1550,12 +1602,12 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
     {
         if (string.IsNullOrWhiteSpace(identifier))
         {
-            throw new InvalidOperationException("Database name must not be empty.");
+            throw new InvalidOperationException("Identifier must not be empty.");
         }
 
         if (identifier.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '_' or '$')))
         {
-            throw new InvalidOperationException("Database name contains invalid characters.");
+            throw new InvalidOperationException($"Identifier '{identifier}' contains invalid characters.");
         }
     }
 }
