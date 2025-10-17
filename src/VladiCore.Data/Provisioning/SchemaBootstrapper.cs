@@ -304,7 +304,7 @@ public sealed class SchemaBootstrapper : ISchemaBootstrapper
                 }
                 else
                 {
-                    aggregatedTables[table.Name] = table.Clone();
+                    aggregatedTables[table.Name] = table.Copy();
                 }
             }
         }
@@ -1005,7 +1005,7 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
                     }
                     else
                     {
-                        tables[plan.Name] = plan.Clone();
+                        tables[plan.Name] = plan.Copy();
                     }
                 }
                 else if (statement.StartsWith("ALTER TABLE", StringComparison.OrdinalIgnoreCase))
@@ -1024,7 +1024,7 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
         IDictionary<string, ColumnEnsureInstruction> Columns,
         IDictionary<string, ForeignKeyEnsureInstruction> ForeignKeys)
     {
-        public TableEnsurePlan Clone()
+        public TableEnsurePlan Copy()
         {
             return new TableEnsurePlan(
                 Name,
@@ -1070,6 +1070,7 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
             var body = match.Groups["body"].Value;
             var columns = new Dictionary<string, ColumnEnsureInstruction>(StringComparer.OrdinalIgnoreCase);
             var foreignKeys = new Dictionary<string, ForeignKeyEnsureInstruction>(StringComparer.OrdinalIgnoreCase);
+            var retainedDefinitions = new List<string>();
 
             foreach (var definition in SplitDefinitionElements(body))
             {
@@ -1083,13 +1084,21 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
                 var column = ColumnDefinitionParser.Parse(definition);
                 if (column is null)
                 {
+                    var trimmed = definition.Trim();
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        retainedDefinitions.Add(trimmed);
+                    }
                     continue;
                 }
 
                 columns[column.Name] = new ColumnEnsureInstruction(column, ColumnEnsureMode.EnsureExists);
+                retainedDefinitions.Add(definition.Trim());
             }
 
-            return new TableEnsurePlan(tableName, statement, columns, foreignKeys);
+            var sanitizedCreateStatement = BuildCreateStatementWithoutForeignKeys(statement, retainedDefinitions);
+
+            return new TableEnsurePlan(tableName, sanitizedCreateStatement, columns, foreignKeys);
         }
 
         public static void ApplyAlterStatement(string statement, IDictionary<string, TableEnsurePlan> tables)
@@ -1150,6 +1159,43 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
                     table.Columns[column.Name] = new ColumnEnsureInstruction(column, ColumnEnsureMode.EnsureMatches);
                 }
             }
+        }
+        private static string BuildCreateStatementWithoutForeignKeys(string originalStatement, IReadOnlyCollection<string> definitions)
+        {
+            var openParenIndex = originalStatement.IndexOf('(');
+            var closeParenIndex = originalStatement.LastIndexOf(')');
+
+            if (openParenIndex < 0 || closeParenIndex <= openParenIndex)
+            {
+                return originalStatement;
+            }
+
+            var prefix = originalStatement[..(openParenIndex + 1)].TrimEnd();
+            var suffix = originalStatement[(closeParenIndex + 1)..];
+
+            var builder = new StringBuilder();
+            builder.Append(prefix);
+
+            if (definitions.Count > 0)
+            {
+                builder.AppendLine();
+                builder.Append("    ");
+                builder.Append(string.Join(",\n    ", definitions));
+                builder.AppendLine();
+            }
+
+            builder.Append(')');
+            if (!string.IsNullOrWhiteSpace(suffix))
+            {
+                if (!char.IsWhiteSpace(builder[^1]))
+                {
+                    builder.Append(' ');
+                }
+
+                builder.Append(suffix.TrimStart());
+            }
+
+            return builder.ToString();
         }
     }
 
