@@ -818,9 +818,15 @@ WHERE table_schema = DATABASE() AND table_name = @tableName AND column_name = @c
         ValidateIdentifier(referencedTable);
         ValidateIdentifier(referencedColumn);
 
+        // Force a collation-agnostic comparison so mixed collations do not break the sync check.
+        var sourceBinary = $"CAST(source.`{columnName}` AS BINARY)";
+        var targetBinary = $"CAST(target.`{referencedColumn}` AS BINARY)";
+
         var sql = $@"SELECT 1 FROM `{tableName}` AS source
-LEFT JOIN `{referencedTable}` AS target ON source.`{columnName}` = target.`{referencedColumn}`
-WHERE source.`{columnName}` IS NOT NULL AND target.`{referencedColumn}` IS NULL
+WHERE source.`{columnName}` IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM `{referencedTable}` AS target
+    WHERE {sourceBinary} = {targetBinary}
+)
 LIMIT 1;";
 
         await using var command = new MySqlCommand(sql, connection, transaction)
