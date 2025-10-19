@@ -10,6 +10,5 @@ public class LoginRequest
 
     [Required]
     [MinLength(8)]
-    [MaxLength(64)]
     public string Password { get; set; } = string.Empty;
 }

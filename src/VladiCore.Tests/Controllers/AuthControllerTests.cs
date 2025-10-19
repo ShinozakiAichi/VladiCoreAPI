@@ -57,6 +57,32 @@ public class AuthControllerTests
     }
 
     [Test]
+    public async Task Register_ShouldAcceptLongPasswords()
+    {
+        await using var fixture = new AuthControllerFixture();
+        var longPassword = new string('a', 200) + "A1!";
+        var request = new RegisterRequest
+        {
+            Email = "long@example.com",
+            Password = longPassword,
+            DisplayName = "Long Password User"
+        };
+
+        var result = await fixture.Controller.Register(request);
+
+        var createdResult = result.Result as CreatedResult;
+        createdResult.Should().NotBeNull();
+
+        var response = createdResult!.Value as AuthResponse;
+        response.Should().NotBeNull();
+        response!.AccessToken.Should().NotBeNullOrEmpty();
+        response.RefreshToken.Should().NotBe(Guid.Empty);
+
+        var storedUser = await fixture.Context.Users.SingleAsync(u => u.Email == "long@example.com");
+        storedUser.Should().NotBeNull();
+    }
+
+    [Test]
     public async Task Refresh_ShouldReturnUnauthorized_WhenTokenExpired()
     {
         await using var fixture = new AuthControllerFixture();
