@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
@@ -48,7 +49,20 @@ public class PcController : BaseApiController
             return UnprocessableEntity(ModelState);
         }
 
-        var result = await _autoBuilderService.BuildAsync(request);
-        return Ok(result);
+        try
+        {
+            var result = await _autoBuilderService.BuildAsync(request);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            var problem = ProblemDetailsFactory.CreateProblemDetails(
+                HttpContext,
+                StatusCodes.Status422UnprocessableEntity,
+                detail: ex.Message,
+                title: "Unable to generate PC build");
+
+            return UnprocessableEntity(problem);
+        }
     }
 }
