@@ -6,8 +6,8 @@ operations. The service uses MySQL 8 as the primary data store and integrates wi
 
 ## Features
 
-- **Authentication & profiles**: user registration/login/refresh, role-based policies (`User`, `Admin`), profile updates, and
-  admin-controlled blocking.
+- **Authentication & profiles**: user registration/login/refresh with 8+ character passwords (long passphrases supported),
+  role-based policies (`User`, `Admin`), profile updates, and admin-controlled blocking.
 - **Product catalog**: paged filtering by category/price/rating, full-text search, rating summaries, price history materialization,
   recommendations, and admin CRUD with automatic price history tracking.
 - **Reviews**: authenticated review submission (configurable), owner edits within a configurable time window, soft deletion,
