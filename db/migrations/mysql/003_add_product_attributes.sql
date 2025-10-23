@@ -1,0 +1,2 @@
+ALTER TABLE Products
+    ADD COLUMN IF NOT EXISTS Attributes JSON NULL AFTER Specs;
