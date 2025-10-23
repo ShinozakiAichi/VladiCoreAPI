@@ -10,6 +10,7 @@ operations. The service uses MySQL 8 as the primary data store and integrates wi
   role-based policies (`User`, `Admin`), profile updates, and admin-controlled blocking.
 - **Product catalog**: paged filtering by category/price/rating, full-text search, rating summaries, price history materialization,
   recommendations, and admin CRUD with automatic price history tracking.
+- **Categories**: hierarchical catalog categories with public listing/details endpoints and admin create/update/delete workflows.
 - **Reviews**: authenticated review submission (configurable), owner edits within a configurable time window, soft deletion,
   admin moderation queue with approve/reject reasons, presigned photo confirmation, helpful voting, and automatic rating
   recomputation.
