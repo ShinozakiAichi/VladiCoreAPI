@@ -26,6 +26,22 @@ using VladiCore.Recommendations.Services;
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
+const string AllowAllCorsPolicyName = "AllowAll";
+
+// ===============================
+// 🌍 Глобальный CORS (разрешить всех)
+// ===============================
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(AllowAllCorsPolicyName, policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 builder.Host.UseSerilog((context, services, configuration) =>
 {
     configuration
@@ -111,27 +127,6 @@ builder.Services.AddSingleton<IAmazonS3>(sp =>
 builder.Services.AddSingleton<IObjectStorageService, S3StorageService>();
 builder.Services.AddHostedService<DatabaseProvisioningHostedService>();
 
-var allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? Array.Empty<string>();
-
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("default", policy =>
-    {
-        if (allowedOrigins.Length == 0)
-        {
-            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
-        }
-        else
-        {
-            policy.WithOrigins(allowedOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod()
-                .AllowCredentials();
-        }
-    });
-});
-
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
@@ -209,7 +204,10 @@ app.UseStatusCodePages();
 app.UseSerilogRequestLogging();
 app.UseRequestLogging();
 
-app.UseCors("default");
+// ===============================
+// 🌍 Включаем CORS до аутентификации
+// ===============================
+app.UseCors(AllowAllCorsPolicyName);
 
 app.UseAuthentication();
 app.UseAuthorization();
