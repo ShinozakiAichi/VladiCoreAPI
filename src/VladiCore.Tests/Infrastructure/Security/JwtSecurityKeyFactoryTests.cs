@@ -35,6 +35,7 @@ public class JwtSecurityKeyFactoryTests
     {
         var exception = Assert.Throws<InvalidOperationException>(() => JwtSecurityKeyFactory.Create("short"));
 
-        Assert.That(exception!.Message, Does.Contain("128 bits"));
+        Assert.That(exception!.Message, Does.Contain("Jwt:SigningKey"));
+        Assert.That(exception.Message, Does.Contain("128 bits"));
     }
 }

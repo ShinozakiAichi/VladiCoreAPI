@@ -36,7 +36,7 @@ Key variables:
 | Variable | Purpose |
 | --- | --- |
 | `ConnectionStrings__Default` | MySQL connection string used by the API. |
-| `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey` | JWT bearer token configuration. Always replace the signing key. |
+| `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey` | JWT bearer token configuration. `Jwt__SigningKey` must resolve to at least 16 bytes (128 bits); generate one with `openssl rand -base64 32`. |
 | `Jwt__AccessTokenTtlSeconds`, `Jwt__RefreshTokenTtlSeconds` | Lifetimes (in seconds) for issued access and refresh tokens. |
 | `S3__Endpoint`, `S3__Bucket`, `S3__AccessKey`, `S3__SecretKey`, `S3__UseSsl`, `S3__CdnBaseUrl` | S3/MinIO-compatible object storage used for product assets and review photos. |
 | `Reviews__RequireAuthentication` | Set to `true` to require authenticated users for review submission and presign operations. |
