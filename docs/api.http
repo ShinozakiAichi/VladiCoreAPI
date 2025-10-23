@@ -48,6 +48,14 @@ Accept: application/json
 GET http://localhost:5200/products/1
 Accept: application/json
 
+### List categories
+GET http://localhost:5200/categories
+Accept: application/json
+
+### Category details
+GET http://localhost:5200/categories/1
+Accept: application/json
+
 ### Price history
 GET http://localhost:5200/products/1/price-history?bucket=day&from={{from}}&to={{to}}
 Accept: application/json
@@ -94,6 +102,30 @@ Content-Type: application/json
 
 ### Admin delete product
 DELETE http://localhost:5200/products/11
+Authorization: Bearer {{adminToken}}
+
+### Admin create category
+POST http://localhost:5200/categories
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Мониторы",
+  "parentId": 1
+}
+
+### Admin update category
+PUT http://localhost:5200/categories/5
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Мониторы и дисплеи",
+  "parentId": 1
+}
+
+### Admin delete category
+DELETE http://localhost:5200/categories/5
 Authorization: Bearer {{adminToken}}
 
 ### Request presign for product image
