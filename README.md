@@ -15,6 +15,7 @@ operations. The service uses MySQL 8 as the primary data store and integrates wi
   admin moderation queue with approve/reject reasons, presigned photo confirmation, helpful voting, and automatic rating
   recomputation.
 - **Storage**: presigned PUT URLs for product/review photos with prefix enforcement and CDN-aware public URLs.
+- **CORS**: global wildcard policy so browser clients from any domain can call the API without preflight failures.
 - **Observability & resilience**: Serilog request logging with correlation IDs, RFC 7807 error responses, and rate limiting for
   review submissions.
 
