@@ -19,10 +19,13 @@ public static class JwtSecurityKeyFactory
             ? decodedBytes
             : Encoding.UTF8.GetBytes(signingKey);
 
-        if (keyBytes.Length * 8 < MinKeySizeInBits)
+        var keySizeInBits = keyBytes.Length * 8;
+        if (keySizeInBits < MinKeySizeInBits)
         {
             throw new InvalidOperationException(
-                $"JWT signing key must be at least {MinKeySizeInBits / 8} bytes (128 bits) long.");
+                $"Jwt:SigningKey must be at least {MinKeySizeInBits / 8} bytes (128 bits) long. " +
+                $"Provided value resolves to {keyBytes.Length} bytes ({keySizeInBits} bits). " +
+                "Update the Jwt__SigningKey environment variable or configuration value.");
         }
 
         return new SymmetricSecurityKey(keyBytes);

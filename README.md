@@ -32,7 +32,8 @@ cp .env.example .env
 Populate `.env` with:
 
 - `ConnectionStrings__Default` – MySQL connection string.
-- `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey`, `Jwt__AccessTokenTtlSeconds`, `Jwt__RefreshTokenTtlSeconds`.
+- `Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey`, `Jwt__AccessTokenTtlSeconds`, `Jwt__RefreshTokenTtlSeconds` (signing key must
+  resolve to at least 16 bytes / 128 bits; generate one with `openssl rand -base64 32`).
 - `S3__Endpoint`, `S3__Bucket`, `S3__AccessKey`, `S3__SecretKey`, `S3__UseSsl`, `S3__CdnBaseUrl`.
 - `Reviews__RequireAuthentication` – set `true` to force authentication for review submissions & presign.
 - `Reviews__UserEditWindowHours` – number of hours a non-admin author can edit their review (default `24`).
