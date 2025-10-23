@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using VladiCore.Api.Infrastructure.Options;
+using VladiCore.Api.Infrastructure.Security;
 using VladiCore.Data.Identity;
 
 namespace VladiCore.Api.Services;
@@ -18,7 +18,7 @@ public class JwtTokenService
     public JwtTokenService(IOptions<JwtOptions> options)
     {
         _options = options.Value;
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));
+        var securityKey = JwtSecurityKeyFactory.Create(_options.SigningKey);
         _signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
     }
 
