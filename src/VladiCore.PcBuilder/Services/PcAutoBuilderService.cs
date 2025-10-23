@@ -369,7 +369,11 @@ namespace VladiCore.PcBuilder.Services
                     var option = CreateOption(product, attributes);
                     if (option != null)
                     {
-                        map[attributes.ComponentType.ToLowerInvariant()].Add(option);
+                        var key = attributes.ComponentType.ToLowerInvariant();
+                        if (map.TryGetValue(key, out var bucket))
+                        {
+                            bucket.Add(option);
+                        }
                     }
                 }
                 catch (JsonException)
