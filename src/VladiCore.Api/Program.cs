@@ -1,4 +1,3 @@
-using System.Text;
 using Amazon.Runtime;
 using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -12,6 +11,7 @@ using VladiCore.Api.Infrastructure;
 using VladiCore.Api.Infrastructure.Database;
 using VladiCore.Api.Infrastructure.ObjectStorage;
 using VladiCore.Api.Infrastructure.Options;
+using VladiCore.Api.Infrastructure.Security;
 using VladiCore.Api.Middleware;
 using VladiCore.Api.Swagger;
 using VladiCore.Api.Services;
@@ -57,7 +57,26 @@ var connectionString = config.GetConnectionString("Default")
 
 builder.Services.Configure<ReviewOptions>(config.GetSection("Reviews"));
 builder.Services.Configure<S3Options>(config.GetSection("S3"));
-builder.Services.Configure<JwtOptions>(config.GetSection("Jwt"));
+
+builder.Services
+    .AddOptions<JwtOptions>()
+    .Bind(config.GetSection("Jwt"))
+    .ValidateDataAnnotations()
+    .Validate(
+        options =>
+        {
+            try
+            {
+                JwtSecurityKeyFactory.Create(options.SigningKey);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        },
+        "Jwt:SigningKey must be at least 128 bits long.")
+    .ValidateOnStart();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
@@ -170,6 +189,8 @@ if (string.IsNullOrWhiteSpace(signingKey))
     throw new InvalidOperationException("Jwt:SigningKey must be configured.");
 }
 
+var symmetricSecurityKey = JwtSecurityKeyFactory.Create(signingKey);
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -180,7 +201,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtSection.GetValue<string>("Issuer"),
             ValidAudience = jwtSection.GetValue<string>("Audience"),
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+            IssuerSigningKey = symmetricSecurityKey,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
     });
