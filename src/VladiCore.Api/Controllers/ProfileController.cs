@@ -36,7 +36,8 @@ public class ProfileController : ControllerBase
             return Unauthorized();
         }
 
-        return Ok(ToDto(user));
+        var response = await BuildProfileResponseAsync(user).ConfigureAwait(false);
+        return Ok(response);
     }
 
     [HttpPut]
@@ -77,7 +78,8 @@ public class ProfileController : ControllerBase
 
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return Ok(ToDto(user));
+        var response = await BuildProfileResponseAsync(user).ConfigureAwait(false);
+        return Ok(response);
     }
 
     private async Task<ApplicationUser?> ResolveUserAsync(CancellationToken cancellationToken)
@@ -91,8 +93,9 @@ public class ProfileController : ControllerBase
         return await _userManager.Users.FirstOrDefaultAsync(u => u.Id == guid, cancellationToken).ConfigureAwait(false);
     }
 
-    private static ProfileResponse ToDto(ApplicationUser user)
+    private async Task<ProfileResponse> BuildProfileResponseAsync(ApplicationUser user)
     {
+        var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
         return new ProfileResponse
         {
             Id = user.Id,
@@ -100,7 +103,8 @@ public class ProfileController : ControllerBase
             DisplayName = user.DisplayName,
             IsBlocked = user.IsBlocked,
             CreatedAt = user.CreatedAt,
-            UpdatedAt = user.UpdatedAt
+            UpdatedAt = user.UpdatedAt,
+            Roles = roles
         };
     }
 }

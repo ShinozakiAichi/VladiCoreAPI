@@ -203,4 +203,4 @@ Serilog writes rolling log files to `logs/api-*.log` and the console. Each reque
 
 Admin endpoints require JWT bearer tokens. Configure issuer, audience, and signing key in `appsettings.json`. Rotate secrets outside of source control for production.
 
-Public catalog, analytics, tracking, and PC builder endpoints now allow anonymous access. Catalogue mutations, review moderation, and product asset uploads require the `Admin` role, while presign operations honour the `Reviews__RequireAuthentication` flag and accept authenticated `User` or `Admin` tokens.
+Public catalog, analytics, tracking, and PC builder endpoints now allow anonymous access. Catalogue mutations, review moderation, and product asset uploads require the `Admin` role, while presign operations honour the `Reviews__RequireAuthentication` flag and accept authenticated `User` or `Admin` tokens. Use `GET /me` to inspect the caller's role assignments—the response now returns the current role list so web clients can hide admin-only panels instead of hammering forbidden endpoints.
