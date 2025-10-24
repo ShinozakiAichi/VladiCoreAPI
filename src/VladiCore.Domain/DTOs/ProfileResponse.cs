@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace VladiCore.Domain.DTOs;
 
@@ -15,4 +16,6 @@ public class ProfileResponse
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
+
+    public IReadOnlyCollection<string> Roles { get; set; } = Array.Empty<string>();
 }
