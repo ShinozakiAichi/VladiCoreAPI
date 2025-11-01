@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using VladiCore.Api.Infrastructure;
 using VladiCore.Data.Contexts;
 using VladiCore.Domain.DTOs;
+using VladiCore.PcBuilder.Exceptions;
 using VladiCore.PcBuilder.Services;
 
 namespace VladiCore.Api.Controllers;
@@ -48,7 +49,14 @@ public class PcController : BaseApiController
             return UnprocessableEntity(ModelState);
         }
 
-        var result = await _autoBuilderService.BuildAsync(request);
-        return Ok(result);
+        try
+        {
+            var result = await _autoBuilderService.BuildAsync(request);
+            return Ok(result);
+        }
+        catch (AutoBuildException ex)
+        {
+            return UnprocessableEntity(new { error = ex.Message });
+        }
     }
 }
