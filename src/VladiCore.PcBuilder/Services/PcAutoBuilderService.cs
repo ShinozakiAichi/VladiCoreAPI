@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using VladiCore.Data.Contexts;
 using VladiCore.Domain.DTOs;
 using VladiCore.Domain.Entities;
 using VladiCore.Domain.Enums;
+using VladiCore.PcBuilder.Exceptions;
 using VladiCore.Recommendations.Services;
 
 namespace VladiCore.PcBuilder.Services
@@ -20,15 +22,20 @@ namespace VladiCore.PcBuilder.Services
         private readonly AppDbContext _context;
         private readonly IPcCompatibilityService _compatibilityService;
         private readonly IPriceHistoryService _priceHistoryService;
+        private readonly ILogger<PcAutoBuilderService> _logger;
+
+        private const string PriceHistoryUnavailableMessage = "Price history data is temporarily unavailable.";
 
         public PcAutoBuilderService(
             AppDbContext context,
             IPcCompatibilityService compatibilityService,
-            IPriceHistoryService priceHistoryService)
+            IPriceHistoryService priceHistoryService,
+            ILogger<PcAutoBuilderService> logger)
         {
             _context = context;
             _compatibilityService = compatibilityService;
             _priceHistoryService = priceHistoryService;
+            _logger = logger;
         }
 
         public async Task<AutoBuildResponse> BuildAsync(AutoBuildRequest request)
@@ -50,6 +57,16 @@ namespace VladiCore.PcBuilder.Services
 
             var priorities = BuildPriorityWeights(request.Priorities);
 
+            EnsureRequiredComponentPools(
+                cpuOptions,
+                gpuOptions,
+                ramOptions,
+                storageOptions,
+                motherboardOptions,
+                psuOptions,
+                caseOptions,
+                request.Platform);
+
             var bestBuild = await EvaluateBuildsAsync(
                 cpuOptions,
                 gpuOptions,
@@ -64,7 +81,8 @@ namespace VladiCore.PcBuilder.Services
 
             if (bestBuild == null)
             {
-                throw new InvalidOperationException("Cannot build a compatible PC within the provided budget.");
+                throw new AutoBuildException(
+                    "Unable to assemble a compatible configuration for the selected platform, priorities, and budget.");
             }
 
             var validation = await _compatibilityService.ValidateAsync(new PcValidateRequest
@@ -107,7 +125,16 @@ namespace VladiCore.PcBuilder.Services
                 storageIndex++;
             }
 
-            response.PriceCharts = await BuildChartsAsync(bestBuild);
+            try
+            {
+                response.PriceCharts = await BuildChartsAsync(bestBuild);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load price history series for auto-build response.");
+                response.PriceCharts = Array.Empty<PriceChartSeriesDto>();
+                response.Rationale.Add(PriceHistoryUnavailableMessage);
+            }
 
             if (!validation.IsCompatible)
             {
@@ -138,6 +165,53 @@ namespace VladiCore.PcBuilder.Services
             }
 
             return charts;
+        }
+
+        private static void EnsureRequiredComponentPools(
+            IList<ComponentOption> cpuOptions,
+            IList<ComponentOption> gpuOptions,
+            IList<ComponentOption> ramOptions,
+            IList<ComponentOption> storageOptions,
+            IList<ComponentOption> motherboardOptions,
+            IList<ComponentOption> psuOptions,
+            IList<ComponentOption> caseOptions,
+            string? platform)
+        {
+            if (!cpuOptions.Any())
+            {
+                var platformDescription = string.IsNullOrWhiteSpace(platform) ? "any platform" : platform;
+                throw new AutoBuildException($"No CPU options are available for {platformDescription} builds.");
+            }
+
+            if (!motherboardOptions.Any())
+            {
+                throw new AutoBuildException("No motherboards are available to pair with the selected CPUs.");
+            }
+
+            if (!ramOptions.Any())
+            {
+                throw new AutoBuildException("No RAM modules are available for auto-build suggestions.");
+            }
+
+            if (!gpuOptions.Any())
+            {
+                throw new AutoBuildException("No GPUs are available for auto-build suggestions.");
+            }
+
+            if (!psuOptions.Any())
+            {
+                throw new AutoBuildException("No power supply units are available for auto-build suggestions.");
+            }
+
+            if (!caseOptions.Any())
+            {
+                throw new AutoBuildException("No PC cases are available for auto-build suggestions.");
+            }
+
+            if (!storageOptions.Any())
+            {
+                throw new AutoBuildException("At least one storage device is required to build a PC configuration.");
+            }
         }
 
         private async Task<BestBuild?> EvaluateBuildsAsync(
@@ -263,8 +337,17 @@ namespace VladiCore.PcBuilder.Services
 
                 if (!string.IsNullOrWhiteSpace(cooler.SocketSupport))
                 {
-                    var sockets = JsonConvert.DeserializeObject<List<string>>(cooler.SocketSupport) ?? new List<string>();
-                    if (!sockets.Any(s => string.Equals(s, cpuEntity.Socket, StringComparison.OrdinalIgnoreCase)))
+                    List<string>? sockets = null;
+                    try
+                    {
+                        sockets = JsonConvert.DeserializeObject<List<string>>(cooler.SocketSupport);
+                    }
+                    catch (JsonException)
+                    {
+                        sockets = null;
+                    }
+
+                    if (sockets != null && !sockets.Any(s => string.Equals(s, cpuEntity.Socket, StringComparison.OrdinalIgnoreCase)))
                     {
                         continue;
                     }
@@ -366,10 +449,16 @@ namespace VladiCore.PcBuilder.Services
                         continue;
                     }
 
+                    var key = attributes.ComponentType.ToLowerInvariant();
+                    if (!map.TryGetValue(key, out var bucket))
+                    {
+                        continue;
+                    }
+
                     var option = CreateOption(product, attributes);
                     if (option != null)
                     {
-                        map[attributes.ComponentType.ToLowerInvariant()].Add(option);
+                        bucket.Add(option);
                     }
                 }
                 catch (JsonException)
@@ -432,6 +521,11 @@ namespace VladiCore.PcBuilder.Services
             {
                 var cpu = o.Entity as Cpu;
                 if (cpu == null)
+                {
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(cpu.Socket))
                 {
                     return false;
                 }
