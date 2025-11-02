@@ -52,9 +52,33 @@ public class PcAutoBuilderServiceTests
         return new AppDbContext(options);
     }
 
-    private static void SeedMinimalCatalog(AppDbContext context)
+    [Test]
+    public async Task BuildAsync_ShouldRespectSocketAliasesForAmdPlatform()
     {
-        context.Cpus.Add(new Cpu { Id = 1, Name = "Ryzen 5 7600", Socket = "AM5", Tdp = 105, PerfScore = 600 });
+        await using var context = CreateContext();
+        SeedMinimalCatalog(context, "Socket AM5");
+
+        var service = new PcAutoBuilderService(
+            context,
+            new AlwaysCompatibleService(),
+            new StubPriceHistoryService(),
+            NullLogger<PcAutoBuilderService>.Instance);
+
+        var request = new AutoBuildRequest
+        {
+            Budget = 2000,
+            Platform = "amd",
+            Priorities = new List<string> { "streaming" }
+        };
+
+        var response = await service.BuildAsync(request);
+
+        response.Parts.Should().ContainKey("cpu").WhoseValue.Should().Be(1);
+    }
+
+    private static void SeedMinimalCatalog(AppDbContext context, string cpuSocket = "AM5")
+    {
+        context.Cpus.Add(new Cpu { Id = 1, Name = "Ryzen 5 7600", Socket = cpuSocket, Tdp = 105, PerfScore = 600 });
         context.Motherboards.Add(new Motherboard
         {
             Id = 1,
@@ -191,6 +215,15 @@ public class PcAutoBuilderServiceTests
         public Task<IReadOnlyCollection<PricePointDto>> GetSeriesAsync(int productId, DateTime from, DateTime to, string bucket)
         {
             throw new InvalidOperationException("Simulated price history failure.");
+        }
+    }
+
+    private sealed class StubPriceHistoryService : IPriceHistoryService
+    {
+        public Task<IReadOnlyCollection<PricePointDto>> GetSeriesAsync(int productId, DateTime from, DateTime to, string bucket)
+        {
+            IReadOnlyCollection<PricePointDto> series = Array.Empty<PricePointDto>();
+            return Task.FromResult(series);
         }
     }
 }

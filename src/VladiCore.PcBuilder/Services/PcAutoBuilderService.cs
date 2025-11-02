@@ -509,31 +509,107 @@ namespace VladiCore.PcBuilder.Services
             }
         }
 
-        private static IList<ComponentOption> FilterByPlatform(IEnumerable<ComponentOption> options, string platform)
+        private static readonly string[] AmdSocketPrefixes = { "AM", "FM", "SP", "STR" };
+        private static readonly string[] IntelSocketPrefixes = { "LGA", "FCLGA", "BGA" };
+
+        private static IList<ComponentOption> FilterByPlatform(IEnumerable<ComponentOption> options, string? platform)
         {
             if (string.IsNullOrWhiteSpace(platform))
             {
                 return options.ToList();
             }
 
-            platform = platform.ToLowerInvariant();
-            return options.Where(o =>
+            var normalizedPlatform = platform.Trim().ToLowerInvariant();
+
+            return options
+                .Where(o => o.Entity is Cpu cpu && MatchesRequestedPlatform(cpu, normalizedPlatform))
+                .ToList();
+        }
+
+        private static bool MatchesRequestedPlatform(Cpu cpu, string platform)
+        {
+            return platform switch
             {
-                var cpu = o.Entity as Cpu;
-                if (cpu == null)
-                {
-                    return false;
-                }
+                "amd" => IsAmdCpu(cpu),
+                "intel" => IsIntelCpu(cpu),
+                _ => true
+            };
+        }
 
-                if (string.IsNullOrWhiteSpace(cpu.Socket))
-                {
-                    return false;
-                }
+        private static bool IsAmdCpu(Cpu cpu)
+        {
+            var socket = NormalizeSocket(cpu.Socket);
+            if (MatchesAnyPrefix(socket, AmdSocketPrefixes))
+            {
+                return true;
+            }
 
-                return platform == "intel"
-                    ? cpu.Socket.StartsWith("LGA", StringComparison.OrdinalIgnoreCase)
-                    : cpu.Socket.StartsWith("AM", StringComparison.OrdinalIgnoreCase);
-            }).ToList();
+            return NameIndicatesManufacturer(cpu.Name, new[] { "amd", "ryzen", "threadripper", "epyc" });
+        }
+
+        private static bool IsIntelCpu(Cpu cpu)
+        {
+            var socket = NormalizeSocket(cpu.Socket);
+            if (MatchesAnyPrefix(socket, IntelSocketPrefixes))
+            {
+                return true;
+            }
+
+            return NameIndicatesManufacturer(cpu.Name, new[] { "intel", "core", "xeon" });
+        }
+
+        private static string NormalizeSocket(string socket)
+        {
+            if (string.IsNullOrWhiteSpace(socket))
+            {
+                return string.Empty;
+            }
+
+            var trimmed = socket.Trim();
+            if (trimmed.StartsWith("socket", StringComparison.OrdinalIgnoreCase))
+            {
+                trimmed = trimmed.Substring("socket".Length).Trim();
+            }
+
+            var normalized = new string(trimmed.Where(char.IsLetterOrDigit).ToArray());
+            return normalized.ToUpperInvariant();
+        }
+
+        private static bool MatchesAnyPrefix(string value, IEnumerable<string> prefixes)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            foreach (var prefix in prefixes)
+            {
+                if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool NameIndicatesManufacturer(string? name, IEnumerable<string> keywords)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            var lowered = name.ToLowerInvariant();
+            foreach (var keyword in keywords)
+            {
+                if (lowered.Contains(keyword))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private class ComponentOption
